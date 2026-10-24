@@ -7,10 +7,16 @@ Start with `make new-action NAME=<verb-noun>`. It creates `actions/<name>/` and 
 | Need | Build |
 | --- | --- |
 | A full CI/CD process a repo calls (jobs, runners, permissions) | Reusable workflow |
-| Steps shared by two or more workflows | Action |
-| Steps used by one workflow only | Inline steps in that workflow |
+| A self-contained unit of steps that a repo could use on its own | Action |
+| Steps that only make sense inside one workflow | Inline steps in that workflow |
 
-Don't create an action until a second workflow needs the steps.
+Actions are independent building blocks, and workflows compose them. An action doesn't need a second workflow before it exists, but it does need to stand on its own:
+
+- It does one job with a clear result, e.g. "Node set up and dependencies installed", and a consumer repo could call it directly in its own workflow.
+- It holds real logic: detection, validation, verified downloads. Don't wrap a single third-party action just to pass its inputs through. Use the third-party action directly.
+- Its inputs and outputs are a contract you're willing to keep. They're public API under the catalog's version, so changing them later is a major release.
+
+When a workflow's steps meet these rules, move them into an action and have the workflow use it through the `.catalog` checkout (see [authoring-workflows.md](authoring-workflows.md#use-catalog-actions)). Moving steps doesn't change the workflow's contract.
 
 ## Composite actions (default)
 

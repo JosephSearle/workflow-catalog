@@ -47,7 +47,15 @@ jobs:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
           path: .catalog
+          sparse-checkout: /actions/
+          sparse-checkout-cone-mode: false
           persist-credentials: false
+
+      # .catalog must stay until the job ends: catalog actions' post steps
+      # reload it from there. Hide it from git and gitignore-aware tools.
+      - name: Exclude catalog checkout from git
+        working-directory: .
+        run: echo '/.catalog/' >> .git/info/exclude
 
       # - uses: ./.catalog/actions/<name>
 

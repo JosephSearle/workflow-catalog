@@ -11,7 +11,7 @@ The name is `$ARGUMENTS`. Read [docs/authoring-actions.md](../../../docs/authori
 
 ## 1. Check that it should be an action
 
-An action is only for steps that two or more workflows share. Ask the user which two workflows will use it, existing or planned. If there's only one, recommend keeping the steps inline in that workflow and stop unless they insist.
+An action is an independent building block. Check it against "When to write an action vs a workflow" in docs/authoring-actions.md: it does one job a consumer repo could use on its own, it holds real logic rather than wrapping a single third-party action, and its contract is worth keeping. Ask the user which workflows or repos will use it. If it fails those checks, recommend keeping the steps inline and stop unless they insist.
 
 ## 2. Agree the name and contract
 

@@ -22,7 +22,7 @@ New workflows and actions start with an issue: [New reusable workflow](https://g
 Before proposing:
 
 - A workflow needs a caller. Say which repos will use it.
-- An action needs two workflows that share its steps. Steps used by one workflow stay inline. See [docs/authoring-actions.md](docs/authoring-actions.md).
+- An action is an independent building block: one job with real logic that a repo could use on its own. Don't propose a wrapper around a single third-party action. See [docs/authoring-actions.md](docs/authoring-actions.md).
 - Prefer a new optional input with a default over changing an existing component's behaviour.
 
 ## Small changes vs. behaviour changes

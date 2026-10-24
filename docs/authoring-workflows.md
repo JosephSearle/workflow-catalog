@@ -32,11 +32,18 @@ Each workflow's `on.workflow_call` block is its contract.
     repository: ${{ job.workflow_repository }}
     ref: ${{ job.workflow_sha }}
     path: .catalog
+    sparse-checkout: /actions/
+    sparse-checkout-cone-mode: false
     persist-credentials: false
+- name: Exclude catalog checkout from git
+  working-directory: .
+  run: echo '/.catalog/' >> .git/info/exclude
 - uses: ./.catalog/actions/<name>
 ```
 
-This keeps the workflow and its actions at the same version, including in PR tests. The `job.workflow_*` contexts arrived in September 2026 and aren't available on GitHub Enterprise Server.
+This keeps the workflow and its actions at the same version, including in PR tests. The caller's `GITHUB_TOKEN` must be able to read the catalog repo, which holds while the catalog is public.
+
+`.catalog` sits inside the caller's workspace. Don't delete it: the runner reloads a local action's `action.yml` from the workspace when its post steps run at the end of the job (e.g. `actions/setup-node`'s cache save), and those fail if it's gone. The sparse, non-cone checkout keeps it to `actions/`, and the exclude hides it from `git status` and tools that use git's ignore rules. Tools that walk the filesystem without them (e.g. `prettier --check .`) can still see it, so workflows that run such tools over the whole repo should scope or ignore `.catalog`. The `job.workflow_*` contexts arrived in September 2026 and aren't available on GitHub Enterprise Server.
 
 Fallback if the `job.workflow_*` contexts stop working: reference `JosephSearle/workflow-catalog/actions/<name>@vX.Y.Z`, then add the file to `extra-files` in `release-please-config.json` so each release rewrites the ref.
 

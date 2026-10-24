@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this repository.
 
 ## What this repo is
 
-A catalog of reusable GitHub Actions workflows and composite actions that JosephSearle's other repos call by Git ref. It's YAML and shell only: there's no build step. The whole repo is released under a single semver version. The public workflows are `node-ci` and `python-ci` (released in `v1.0.0`) and `shell-lint`. There are no actions yet.
+A catalog of reusable GitHub Actions workflows and composite actions that JosephSearle's other repos call by Git ref. It's YAML and shell only: there's no build step. The whole repo is released under a single semver version. The public workflows are `node-ci` and `python-ci` (released in `v1.0.0`) and `shell-lint`. The one action is `setup-node-deps`, which `node-ci` uses.
 
 ## Commands
 
@@ -39,7 +39,7 @@ Tool versions are pinned in four places that must stay in sync: the `Makefile` v
 5. A workflow's failing fixture runs from `_ci.yml` as `test-wf-<name>-failing` (not in `ci-ok.needs`) plus `test-wf-<name>-failing-assert` (in `ci-ok.needs`), because a job calling a reusable workflow can't set `continue-on-error`.
 Then add a row to the Catalog table in `README.md`. List actions in `actions/README.md` as well.
 
-**Workflows using catalog actions.** `uses: ./actions/x` inside a reusable workflow resolves against the *caller's* checkout. To use a catalog action, check out `${{ job.workflow_repository }}` at `${{ job.workflow_sha }}` into `.catalog` and then use `./.catalog/actions/<name>`. Actions must not call other catalog actions; compose them in workflows instead. Only create an action once two workflows share the steps.
+**Workflows using catalog actions.** `uses: ./actions/x` inside a reusable workflow resolves against the *caller's* checkout. To use a catalog action, check out `${{ job.workflow_repository }}` at `${{ job.workflow_sha }}` into `.catalog` and then use `./.catalog/actions/<name>`. Don't delete `.catalog` during the job, because post steps of the actions it holds reload it at job end. Exclude it from git instead (see `docs/authoring-workflows.md`). Actions must not call other catalog actions; compose them in workflows instead. Actions are independent building blocks: create one for a self-contained unit with real logic that a consumer repo could use on its own, not a wrapper around a single third-party action.
 
 **Template pins.** Dependabot doesn't scan `templates/`, so `scripts/template-pins.sh` copies the SHA pins from live files in `.github/workflows/` and `actions/` into the templates. `make new-*` runs the sync on each file it generates. Templates use `__NAME__` placeholders, which `sed` replaces.
 
