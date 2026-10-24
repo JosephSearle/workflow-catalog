@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.0](https://github.com/JosephSearle/workflow-catalog/compare/v1.0.0...v1.1.0) (2026-10-24)
+
+
+### Added
+
+* **shell-lint:** add fail-on-findings input ([#12](https://github.com/JosephSearle/workflow-catalog/issues/12)) ([c6004b3](https://github.com/JosephSearle/workflow-catalog/commit/c6004b3837a78b7d597a518dcdcf15f06683cbc7))
+* **shell-lint:** add shell-lint workflow ([#10](https://github.com/JosephSearle/workflow-catalog/issues/10)) ([3f08521](https://github.com/JosephSearle/workflow-catalog/commit/3f085216291d5c54161872c6222c9960dc3b075d))
+
 ## 1.0.0 (2026-10-24)
 
 
