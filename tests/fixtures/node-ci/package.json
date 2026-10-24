@@ -1,0 +1,11 @@
+{
+  "name": "node-ci-fixture",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@12.14.0",
+  "scripts": {
+    "lint": "node -e \"console.log('lint ok')\"",
+    "test": "node -e \"console.log('test ok')\"",
+    "build": "node -e \"console.log('build ok')\""
+  }
+}

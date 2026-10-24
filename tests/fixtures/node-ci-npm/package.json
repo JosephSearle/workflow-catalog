@@ -1,0 +1,8 @@
+{
+  "name": "node-ci-npm-fixture",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node -e \"console.log('test ok')\""
+  }
+}

@@ -34,7 +34,7 @@ An action is only for steps that two or more workflows share. Ask the user which
 
 ## 5. Register in `_ci.yml`
 
-Follow "Register a component in `_ci.yml`" in docs/testing.md. Name the filter `action-<name>` and the job `test-action-<name>`. If this is the first component, uncomment `changes` and add it to `ci-ok.needs` first. Also add `actions/<name>/**` to the filter of every workflow that uses the action.
+Follow "Register a component in `_ci.yml`" in docs/testing.md. Name the filter `action-<name>` and the job `test-action-<name>`. Also add `actions/<name>/**` to the filter of every workflow that uses the action.
 
 ## 6. Docs
 
