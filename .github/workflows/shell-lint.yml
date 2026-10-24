@@ -1,0 +1,282 @@
+# Public. Called by consumer repos. The file name is public API: renaming it is a breaking change.
+# Docs: README.md#workflows   Example caller: examples/callers/shell-lint.yml
+name: shell-lint
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: >-
+          Directory to lint, relative to the repo root. shellcheck checks the shell scripts under it, and
+          pre-commit looks for .pre-commit-config.yaml in it. gitleaks always scans the whole repo history.
+        type: string
+        required: false
+        default: "."
+      pre-commit:
+        description: >-
+          Run `pre-commit run --all-files`: "auto" when working-directory has a .pre-commit-config.yaml,
+          "true" to require one, "false" to skip. shellcheck and gitleaks are on PATH for local hooks.
+        type: string
+        required: false
+        default: auto
+      gitleaks-config:
+        description: >-
+          Path to a gitleaks config, relative to the repo root. Empty lets gitleaks use .gitleaks.toml
+          at the repo root, or its default rules. .gitleaksignore at the repo root is always honoured.
+        type: string
+        required: false
+        default: ""
+      runs-on:
+        description: Runner label for the job. Linux x64 and arm64 runners are supported.
+        type: string
+        required: false
+        default: ubuntu-latest
+      timeout-minutes:
+        description: Job timeout in minutes.
+        type: number
+        required: false
+        default: 10
+    outputs:
+      shellcheck-files:
+        description: Space-separated scripts shellcheck checked, relative to working-directory.
+        value: ${{ jobs.lint.outputs.shellcheck-files }}
+      shellcheck-result:
+        description: >-
+          shellcheck result: "success", "failure" (findings), "error" (shellcheck couldn't run) or
+          "skipped" (no scripts found).
+        value: ${{ jobs.lint.outputs.shellcheck-result }}
+      gitleaks-result:
+        description: >-
+          gitleaks result: "success", "failure" (secrets found) or "error" (bad config or gitleaks
+          couldn't run).
+        value: ${{ jobs.lint.outputs.gitleaks-result }}
+      pre-commit-result:
+        description: pre-commit result, "success", "failure" or "skipped".
+        value: ${{ jobs.lint.outputs.pre-commit-result }}
+
+permissions: {}
+
+jobs:
+  lint:
+    name: Shell lint
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    permissions:
+      contents: read
+    outputs:
+      shellcheck-files: ${{ steps.shellcheck.outputs.files }}
+      shellcheck-result: ${{ steps.report.outputs.shellcheck-result }}
+      gitleaks-result: ${{ steps.report.outputs.gitleaks-result }}
+      pre-commit-result: ${{ steps.report.outputs.pre-commit-result }}
+    # Dependabot can't bump these. To upgrade, pick a release at least 7 days
+    # old, then take gitleaks hashes from its checksums.txt and shellcheck
+    # hashes from the release assets' digests (`gh api
+    # repos/koalaman/shellcheck/releases/tags/<tag> -q '.assets[].digest'`).
+    env:
+      SHELLCHECK_VERSION: v0.11.0
+      SHELLCHECK_SHA256_X64: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+      SHELLCHECK_SHA256_ARM64: 12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261eaa7e7c14588
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256_X64: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+      GITLEAKS_SHA256_ARM64: e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080
+      PRE_COMMIT_VERSION: 4.7.0
+      # pre-commit and its dependencies come from PyPI without hashes. This
+      # cutoff keeps their resolution repeatable; move it with the version.
+      PRE_COMMIT_EXCLUDE_NEWER: "2026-10-17T00:00:00Z"
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      # Full history, so gitleaks can scan every commit.
+      - name: Check out caller repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - id: detect
+        name: Check inputs and runner
+        env:
+          PRE_COMMIT: ${{ inputs.pre-commit }}
+        run: |
+          if [ "$RUNNER_OS" != Linux ]; then
+            echo "::error::shell-lint runs on Linux runners only, got $RUNNER_OS. Set runs-on to a Linux label."
+            exit 1
+          fi
+          case "$RUNNER_ARCH" in
+            X64|ARM64) ;;
+            *) echo "::error::shell-lint supports X64 and ARM64 runners, got $RUNNER_ARCH."; exit 1 ;;
+          esac
+
+          case "$PRE_COMMIT" in
+            auto) if [ -f .pre-commit-config.yaml ]; then run=true; else run=false; fi ;;
+            true)
+              if [ ! -f .pre-commit-config.yaml ]; then
+                echo "::error::pre-commit is 'true', but there's no .pre-commit-config.yaml in the working directory."
+                exit 1
+              fi
+              run=true
+              ;;
+            false) run=false ;;
+            *) echo "::error::pre-commit must be 'auto', 'true' or 'false', got '$PRE_COMMIT'."; exit 1 ;;
+          esac
+          echo "pre-commit=$run" >> "$GITHUB_OUTPUT"
+
+      - name: Install shellcheck and gitleaks
+        working-directory: ${{ runner.temp }}
+        run: |
+          if [ "$RUNNER_ARCH" = ARM64 ]; then
+            sc_arch=aarch64 sc_sha="$SHELLCHECK_SHA256_ARM64"
+            gl_arch=arm64 gl_sha="$GITLEAKS_SHA256_ARM64"
+          else
+            sc_arch=x86_64 sc_sha="$SHELLCHECK_SHA256_X64"
+            gl_arch=x64 gl_sha="$GITLEAKS_SHA256_X64"
+          fi
+          sc_file="shellcheck-$SHELLCHECK_VERSION.linux.$sc_arch.tar.xz"
+          gl_file="gitleaks_${GITLEAKS_VERSION}_linux_$gl_arch.tar.gz"
+
+          curl -fsSL --retry 3 -o "$sc_file" "https://github.com/koalaman/shellcheck/releases/download/$SHELLCHECK_VERSION/$sc_file"
+          curl -fsSL --retry 3 -o "$gl_file" "https://github.com/gitleaks/gitleaks/releases/download/v$GITLEAKS_VERSION/$gl_file"
+          printf '%s  %s\n%s  %s\n' "$sc_sha" "$sc_file" "$gl_sha" "$gl_file" | sha256sum -c -
+
+          bin="$RUNNER_TEMP/shell-lint-bin"
+          mkdir -p "$bin"
+          tar -xJf "$sc_file" --strip-components=1 -C "$bin" "shellcheck-$SHELLCHECK_VERSION/shellcheck"
+          tar -xzf "$gl_file" -C "$bin" gitleaks
+          echo "$bin" >> "$GITHUB_PATH"
+          "$bin/shellcheck" --version
+          "$bin/gitleaks" version
+
+      # Checks *.sh and *.bash files, plus any other file with a sh, bash, dash
+      # or ksh shebang. shellcheck reads the caller's .shellcheckrc itself and
+      # follows `source` to files it can find next to the script.
+      - id: shellcheck
+        name: Run shellcheck
+        continue-on-error: true
+        run: |
+          shebang='^#![[:space:]]*/[^[:space:]]*/(env[[:space:]]+(-S[[:space:]]+)?)?(sh|bash|dash|ksh)([[:space:]]|$)'
+          files=()
+          while IFS= read -r -d '' file; do
+            file="${file#./}"
+            if [[ "$file" == *$'\n'* ]]; then
+              echo "::warning::Skipping a file whose name contains a newline."
+              continue
+            fi
+            case "$file" in
+              *.sh|*.bash) files+=("$file") ;;
+              *)
+                if head -n 1 -- "$file" 2>/dev/null | grep -Eq "$shebang"; then
+                  files+=("$file")
+                fi
+                ;;
+            esac
+          done < <(find . \( -name .git -o -name node_modules -o -name .venv \) -prune -o -type f -print0 | sort -z)
+
+          echo "files=${files[*]}" >> "$GITHUB_OUTPUT"
+          echo "count=${#files[@]}" >> "$GITHUB_OUTPUT"
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::notice::No shell scripts found, so shellcheck was skipped."
+            exit 0
+          fi
+          echo "Checking ${#files[@]} file(s):"
+          printf '  %s\n' "${files[@]}"
+          # Exit 1 means findings. Anything else is shellcheck itself failing.
+          status=0
+          shellcheck --external-sources --source-path=SCRIPTDIR -- "${files[@]}" || status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      # Runs from the repo root because gitleaks scans the Git history.
+      - id: gitleaks
+        name: Run gitleaks
+        continue-on-error: true
+        working-directory: .
+        env:
+          GITLEAKS_CONFIG_PATH: ${{ inputs.gitleaks-config }}
+        run: |
+          # Leaks exit 2, so they can be told apart from gitleaks errors (exit 1).
+          args=(git --no-banner --redact --exit-code 2)
+          if [ -n "$GITLEAKS_CONFIG_PATH" ]; then
+            if [ ! -f "$GITLEAKS_CONFIG_PATH" ]; then
+              echo "::error::gitleaks-config '$GITLEAKS_CONFIG_PATH' doesn't exist."
+              echo "status=config-missing" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+            args+=(--config "$GITLEAKS_CONFIG_PATH")
+          fi
+          status=0
+          gitleaks "${args[@]}" . || status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          case "$status" in
+            0) ;;
+            2)
+              echo "::error::gitleaks found secrets in the Git history. Rotate them, then list their fingerprints in .gitleaksignore."
+              ;;
+            *) echo "::error::gitleaks failed (exit $status). Check the config and the log above." ;;
+          esac
+          exit "$status"
+
+      - name: Set up uv
+        if: steps.detect.outputs.pre-commit == 'true'
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: false
+
+      # pre-commit runs from the repo root, so hook `files:` patterns are
+      # root-relative.
+      - id: pre-commit
+        name: Run pre-commit
+        if: steps.detect.outputs.pre-commit == 'true'
+        continue-on-error: true
+        working-directory: .
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        run: |
+          uvx --exclude-newer "$PRE_COMMIT_EXCLUDE_NEWER" "pre-commit@$PRE_COMMIT_VERSION" run --all-files --show-diff-on-failure \
+            --config "${WORKING_DIRECTORY%/}/.pre-commit-config.yaml"
+
+      - id: report
+        name: Report results
+        env:
+          SHELLCHECK_OUTCOME: ${{ steps.shellcheck.outcome }}
+          SHELLCHECK_COUNT: ${{ steps.shellcheck.outputs.count }}
+          SHELLCHECK_STATUS: ${{ steps.shellcheck.outputs.status }}
+          GITLEAKS_OUTCOME: ${{ steps.gitleaks.outcome }}
+          GITLEAKS_STATUS: ${{ steps.gitleaks.outputs.status }}
+          PRE_COMMIT_OUTCOME: ${{ steps.pre-commit.outcome }}
+        run: |
+          # Only the tools' own "findings" exit codes count as failure.
+          shellcheck_result="$SHELLCHECK_OUTCOME"
+          if [ "$shellcheck_result" = success ] && [ "${SHELLCHECK_COUNT:-0}" -eq 0 ]; then
+            shellcheck_result=skipped
+          elif [ "$shellcheck_result" = failure ] && [ "$SHELLCHECK_STATUS" != 1 ]; then
+            shellcheck_result=error
+          fi
+          gitleaks_result="$GITLEAKS_OUTCOME"
+          if [ "$gitleaks_result" = failure ] && [ "$GITLEAKS_STATUS" != 2 ]; then
+            gitleaks_result=error
+          fi
+          {
+            echo "shellcheck-result=$shellcheck_result"
+            echo "gitleaks-result=$gitleaks_result"
+            echo "pre-commit-result=$PRE_COMMIT_OUTCOME"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "### shell-lint"
+            echo
+            echo "| Check | Result |"
+            echo "| --- | --- |"
+            echo "| shellcheck ($SHELLCHECK_VERSION, ${SHELLCHECK_COUNT:-0} files) | $shellcheck_result |"
+            echo "| gitleaks (v$GITLEAKS_VERSION, full history) | $gitleaks_result |"
+            echo "| pre-commit | $PRE_COMMIT_OUTCOME |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          failed=""
+          case "$shellcheck_result" in failure|error) failed="$failed shellcheck" ;; esac
+          case "$gitleaks_result" in failure|error) failed="$failed gitleaks" ;; esac
+          [ "$PRE_COMMIT_OUTCOME" = failure ] && failed="$failed pre-commit"
+          if [ -n "$failed" ]; then
+            echo "::error::Failed:$failed. See the step logs above."
+            exit 1
+          fi

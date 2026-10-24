@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# No extension: shell-lint must find this through its shebang.
+set -euo pipefail
+
+target="${1:?usage: deploy <target>}"
+printf 'deploying to %s\n' "$target"

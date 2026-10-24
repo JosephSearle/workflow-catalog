@@ -1,0 +1,11 @@
+# Uses shellcheck from PATH, as nr-fde-bootstrap's local hooks do. pre-commit
+# runs from the repo root, so `files` is root-relative.
+repos:
+  - repo: local
+    hooks:
+      - id: shellcheck
+        name: shellcheck
+        entry: shellcheck
+        language: system
+        types: [shell]
+        files: ^tests/fixtures/shell-lint/

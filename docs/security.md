@@ -8,6 +8,7 @@ Enforced by `_lint.yml` (zizmor, actionlint) and review:
 
 - `permissions: {}` at the top of every workflow, with least privilege per job.
 - Third-party actions pinned to a full commit SHA with a `# vX.Y.Z` comment. Dependabot keeps them current, with a 7-day cooldown before taking new releases.
+- Binaries downloaded in a workflow (e.g. shellcheck and gitleaks in `shell-lint`) pinned to an exact version and checked against a pinned sha256 before use. Dependabot can't bump these, so upgrade them by hand with the same 7-day cooldown. Python tools run with `uvx` (e.g. pre-commit) are pinned to an exact version with an `--exclude-newer` cutoff, but their packages aren't hash-checked.
 - `persist-credentials: false` on checkouts.
 - No `${{ }}` interpolation inside `run:`. Use `env:`.
 - No `pull_request_target`.

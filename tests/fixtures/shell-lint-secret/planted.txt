@@ -1,0 +1,2 @@
+Fake secret for the shell-lint test. It isn't a real credential.
+CATALOG_FAKE_SECRET_0000NOTAREALSECRET000000
