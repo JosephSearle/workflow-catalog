@@ -77,16 +77,13 @@ jobs:
       gitleaks-result: ${{ steps.report.outputs.gitleaks-result }}
       pre-commit-result: ${{ steps.report.outputs.pre-commit-result }}
     # Dependabot can't bump these. To upgrade, pick a release at least 7 days
-    # old, then take gitleaks hashes from its checksums.txt and shellcheck
-    # hashes from the release assets' digests (`gh api
+    # old, then take the hashes from the release assets' digests (`gh api
     # repos/koalaman/shellcheck/releases/tags/<tag> -q '.assets[].digest'`).
+    # The gitleaks pin lives in actions/scan-secrets.
     env:
       SHELLCHECK_VERSION: v0.11.0
       SHELLCHECK_SHA256_X64: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
       SHELLCHECK_SHA256_ARM64: 12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261eaa7e7c14588
-      GITLEAKS_VERSION: 8.30.1
-      GITLEAKS_SHA256_X64: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
-      GITLEAKS_SHA256_ARM64: e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080
       PRE_COMMIT_VERSION: 4.7.0
       # pre-commit and its dependencies come from PyPI without hashes. This
       # cutoff keeps their resolution repeatable; move it with the version.
@@ -131,30 +128,43 @@ jobs:
           esac
           echo "pre-commit=$run" >> "$GITHUB_OUTPUT"
 
-      - name: Install shellcheck and gitleaks
+      # Check out the catalog at the exact commit of this workflow so that
+      # catalog actions always match the workflow's version.
+      - name: Check out catalog
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .catalog
+          sparse-checkout: /actions/
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      # .catalog must stay until the job ends, because catalog actions reload
+      # it for post steps. Hide it from git, so pre-commit (which lists files
+      # with git) skips it. The shellcheck step prunes it itself.
+      - name: Exclude catalog checkout from git
+        working-directory: .
+        run: echo '/.catalog/' >> .git/info/exclude
+
+      - name: Install shellcheck
         working-directory: ${{ runner.temp }}
         run: |
           if [ "$RUNNER_ARCH" = ARM64 ]; then
             sc_arch=aarch64 sc_sha="$SHELLCHECK_SHA256_ARM64"
-            gl_arch=arm64 gl_sha="$GITLEAKS_SHA256_ARM64"
           else
             sc_arch=x86_64 sc_sha="$SHELLCHECK_SHA256_X64"
-            gl_arch=x64 gl_sha="$GITLEAKS_SHA256_X64"
           fi
           sc_file="shellcheck-$SHELLCHECK_VERSION.linux.$sc_arch.tar.xz"
-          gl_file="gitleaks_${GITLEAKS_VERSION}_linux_$gl_arch.tar.gz"
 
           curl -fsSL --retry 3 -o "$sc_file" "https://github.com/koalaman/shellcheck/releases/download/$SHELLCHECK_VERSION/$sc_file"
-          curl -fsSL --retry 3 -o "$gl_file" "https://github.com/gitleaks/gitleaks/releases/download/v$GITLEAKS_VERSION/$gl_file"
-          printf '%s  %s\n%s  %s\n' "$sc_sha" "$sc_file" "$gl_sha" "$gl_file" | sha256sum -c -
+          printf '%s  %s\n' "$sc_sha" "$sc_file" | sha256sum -c -
 
           bin="$RUNNER_TEMP/shell-lint-bin"
           mkdir -p "$bin"
           tar -xJf "$sc_file" --strip-components=1 -C "$bin" "shellcheck-$SHELLCHECK_VERSION/shellcheck"
-          tar -xzf "$gl_file" -C "$bin" gitleaks
           echo "$bin" >> "$GITHUB_PATH"
           "$bin/shellcheck" --version
-          "$bin/gitleaks" version
 
       # Checks *.sh and *.bash files, plus any other file with a sh, bash, dash
       # or ksh shebang. shellcheck reads the caller's .shellcheckrc itself and
@@ -179,7 +189,7 @@ jobs:
                 fi
                 ;;
             esac
-          done < <(find . \( -name .git -o -name node_modules -o -name .venv \) -prune -o -type f -print0 | sort -z)
+          done < <(find . \( -name .git -o -name node_modules -o -name .venv -o -path ./.catalog \) -prune -o -type f -print0 | sort -z)
 
           echo "files=${files[*]}" >> "$GITHUB_OUTPUT"
           echo "count=${#files[@]}" >> "$GITHUB_OUTPUT"
@@ -195,35 +205,16 @@ jobs:
           echo "status=$status" >> "$GITHUB_OUTPUT"
           exit "$status"
 
-      # Runs from the repo root because gitleaks scans the Git history.
+      # Scans the whole Git history from the repo root, and leaves gitleaks on
+      # PATH for pre-commit hooks. Findings don't fail here: the report step
+      # decides, so the other checks still run.
       - id: gitleaks
         name: Run gitleaks
         continue-on-error: true
-        working-directory: .
-        env:
-          GITLEAKS_CONFIG_PATH: ${{ inputs.gitleaks-config }}
-        run: |
-          # Leaks exit 2, so they can be told apart from gitleaks errors (exit 1).
-          args=(git --no-banner --redact --exit-code 2)
-          if [ -n "$GITLEAKS_CONFIG_PATH" ]; then
-            if [ ! -f "$GITLEAKS_CONFIG_PATH" ]; then
-              echo "::error::gitleaks-config '$GITLEAKS_CONFIG_PATH' doesn't exist."
-              echo "status=config-missing" >> "$GITHUB_OUTPUT"
-              exit 1
-            fi
-            args+=(--config "$GITLEAKS_CONFIG_PATH")
-          fi
-          status=0
-          gitleaks "${args[@]}" . || status=$?
-          echo "status=$status" >> "$GITHUB_OUTPUT"
-          case "$status" in
-            0) ;;
-            2)
-              echo "::error::gitleaks found secrets in the Git history. Rotate them, then list their fingerprints in .gitleaksignore."
-              ;;
-            *) echo "::error::gitleaks failed (exit $status). Check the config and the log above." ;;
-          esac
-          exit "$status"
+        uses: ./.catalog/actions/scan-secrets
+        with:
+          config: ${{ inputs.gitleaks-config }}
+          fail-on-findings: "false"
 
       - name: Set up uv
         if: steps.detect.outputs.pre-commit == 'true'
@@ -250,8 +241,7 @@ jobs:
           SHELLCHECK_OUTCOME: ${{ steps.shellcheck.outcome }}
           SHELLCHECK_COUNT: ${{ steps.shellcheck.outputs.count }}
           SHELLCHECK_STATUS: ${{ steps.shellcheck.outputs.status }}
-          GITLEAKS_OUTCOME: ${{ steps.gitleaks.outcome }}
-          GITLEAKS_STATUS: ${{ steps.gitleaks.outputs.status }}
+          GITLEAKS_RESULT: ${{ steps.gitleaks.outputs.result }}
           PRE_COMMIT_OUTCOME: ${{ steps.pre-commit.outcome }}
           FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
         run: |
@@ -262,10 +252,8 @@ jobs:
           elif [ "$shellcheck_result" = failure ] && [ "$SHELLCHECK_STATUS" != 1 ]; then
             shellcheck_result=error
           fi
-          gitleaks_result="$GITLEAKS_OUTCOME"
-          if [ "$gitleaks_result" = failure ] && [ "$GITLEAKS_STATUS" != 2 ]; then
-            gitleaks_result=error
-          fi
+          # scan-secrets always sets result. Treat a missing one as an error.
+          gitleaks_result="${GITLEAKS_RESULT:-error}"
           {
             echo "shellcheck-result=$shellcheck_result"
             echo "gitleaks-result=$gitleaks_result"
@@ -277,7 +265,7 @@ jobs:
             echo "| Check | Result |"
             echo "| --- | --- |"
             echo "| shellcheck ($SHELLCHECK_VERSION, ${SHELLCHECK_COUNT:-0} files) | $shellcheck_result |"
-            echo "| gitleaks (v$GITLEAKS_VERSION, full history) | $gitleaks_result |"
+            echo "| gitleaks (full history) | $gitleaks_result |"
             echo "| pre-commit | $PRE_COMMIT_OUTCOME |"
           } >> "$GITHUB_STEP_SUMMARY"
 
