@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this repository.
 
 ## What this repo is
 
-A catalog of reusable GitHub Actions workflows and composite actions that JosephSearle's other repos call by Git ref. It's YAML and shell only: there's no build step. The whole repo is released under a single semver version. The public workflows are `node-ci` and `python-ci` (released in `v1.0.0`) and `shell-lint`. The actions are `setup-node-deps` (used by `node-ci`) and `setup-python-deps` (used by `python-ci`).
+A catalog of reusable GitHub Actions workflows and composite actions that JosephSearle's other repos call by Git ref. It's YAML and shell only: there's no build step. The whole repo is released under a single semver version. The public workflows are `node-ci` and `python-ci` (released in `v1.0.0`) and `shell-lint`. The actions are `setup-node-deps` (used by `node-ci`), `setup-python-deps` (used by `python-ci`) and `scan-secrets` (used by `shell-lint`).
 
 ## Commands
 

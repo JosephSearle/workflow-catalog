@@ -1,0 +1,42 @@
+name: scan-secrets
+description: >-
+  Scans the full Git history for secrets with a pinned, hash-checked gitleaks, honouring .gitleaks.toml
+  and .gitleaksignore. Leaves gitleaks on PATH.
+author: JosephSearle
+
+inputs:
+  config:
+    description: >-
+      Path to a gitleaks config, relative to the repo root. Empty lets gitleaks use .gitleaks.toml
+      at the repo root, or its default rules. .gitleaksignore at the repo root is always honoured.
+    required: false
+    default: ""
+  fail-on-findings:
+    description: >-
+      "true" fails the step when secrets are found. "false" reports them as a warning and in the
+      result output without failing. A scan that can't run ("error") always fails.
+    required: false
+    default: "true"
+
+outputs:
+  result:
+    description: >-
+      "success" (no secrets), "failure" (secrets found) or "error" (shallow checkout, bad config,
+      or gitleaks couldn't be installed or run).
+    value: ${{ steps.scan.outputs.result }}
+  gitleaks-version:
+    description: gitleaks version that was installed, e.g. "8.30.1". Empty if it couldn't be installed.
+    value: ${{ steps.scan.outputs.gitleaks-version }}
+
+runs:
+  using: composite
+  steps:
+    # gitleaks scans the repo at the workspace root, whatever the caller's
+    # working directory.
+    - id: scan
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        CONFIG: ${{ inputs.config }}
+        FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
+      run: '"$GITHUB_ACTION_PATH/scripts/scan.sh"'

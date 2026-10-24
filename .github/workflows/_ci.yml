@@ -35,6 +35,7 @@ jobs:
     outputs:
       action-setup-node-deps: ${{ steps.filter.outputs.action-setup-node-deps }}
       action-setup-python-deps: ${{ steps.filter.outputs.action-setup-python-deps }}
+      action-scan-secrets: ${{ steps.filter.outputs.action-scan-secrets }}
       wf-node-ci: ${{ steps.filter.outputs.wf-node-ci }}
       wf-python-ci: ${{ steps.filter.outputs.wf-python-ci }}
       wf-shell-lint: ${{ steps.filter.outputs.wf-shell-lint }}
@@ -65,6 +66,11 @@ jobs:
               - 'tests/fixtures/python-ci-bare/**'
               - 'tests/fixtures/python-ci-workspace/**'
               - 'tests/fixtures/setup-python-deps-failing/**'
+            # Reuses the shell-lint-secret fixture.
+            action-scan-secrets:
+              - 'actions/scan-secrets/**'
+              - '.github/workflows/_test-action-scan-secrets.yml'
+              - 'tests/fixtures/shell-lint-secret/**'
             wf-node-ci:
               - '.github/workflows/node-ci.yml'
               - 'actions/setup-node-deps/**'
@@ -84,6 +90,7 @@ jobs:
               - 'tests/fixtures/python-ci-failing/**'
             wf-shell-lint:
               - '.github/workflows/shell-lint.yml'
+              - 'actions/scan-secrets/**'
               - '.github/workflows/_test-wf-shell-lint.yml'
               - 'tests/fixtures/shell-lint/**'
               - 'tests/fixtures/shell-lint-failing/**'
@@ -130,6 +137,14 @@ jobs:
     needs: changes
     if: needs.changes.outputs.action-setup-python-deps == 'true'
     uses: ./.github/workflows/_test-action-setup-python-deps.yml
+    permissions:
+      contents: read
+
+  test-action-scan-secrets:
+    name: Test action scan-secrets
+    needs: changes
+    if: needs.changes.outputs.action-scan-secrets == 'true'
+    uses: ./.github/workflows/_test-action-scan-secrets.yml
     permissions:
       contents: read
 
@@ -240,6 +255,7 @@ jobs:
       - lint
       - test-action-setup-node-deps
       - test-action-setup-python-deps
+      - test-action-scan-secrets
       - test-wf-node-ci
       - test-wf-node-ci-failing-assert
       - test-wf-python-ci
