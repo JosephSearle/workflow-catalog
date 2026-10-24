@@ -6,14 +6,16 @@ on:
   workflow_call:
     inputs:
       working-directory:
-        description: Directory containing package.json and the lockfile, relative to the repo root.
+        description: >-
+          Directory containing package.json, relative to the repo root. The lockfile may be here or in a
+          parent workspace root (pnpm-workspace.yaml or npm "workspaces"); install runs where the lockfile is.
         type: string
         required: false
         default: "."
       node-version:
         description: >-
           Node version spec, e.g. "22" or "lts/*". Empty reads .nvmrc or .node-version from
-          working-directory, then the repo root, then falls back to "lts/*".
+          working-directory, then the workspace root, then the repo root, then falls back to "lts/*".
         type: string
         required: false
         default: ""
@@ -75,25 +77,60 @@ jobs:
           NODE_VERSION: ${{ inputs.node-version }}
         run: |
           dir="${WORKING_DIRECTORY%/}"
-          if [ -f pnpm-lock.yaml ]; then
-            pm=pnpm lockfile=pnpm-lock.yaml
-          elif [ -f package-lock.json ]; then
-            pm=npm lockfile=package-lock.json
-          else
-            echo "::error::No pnpm-lock.yaml or package-lock.json in '$WORKING_DIRECTORY'. Commit a lockfile."
+
+          # Walk up from working-directory to the repo root and take the first
+          # lockfile, so workspace members use the workspace root's lockfile.
+          root="$(cd "$GITHUB_WORKSPACE" && pwd -P)"
+          search="$(pwd -P)"
+          pm=""
+          while :; do
+            if [ -f "$search/pnpm-lock.yaml" ]; then
+              pm=pnpm lockfile=pnpm-lock.yaml
+              break
+            elif [ -f "$search/package-lock.json" ]; then
+              pm=npm lockfile=package-lock.json
+              break
+            fi
+            if [ "$search" = "$root" ] || [ "$search" = / ]; then
+              break
+            fi
+            search="$(dirname "$search")"
+          done
+          if [ -z "$pm" ]; then
+            echo "::error::No pnpm-lock.yaml or package-lock.json in '$WORKING_DIRECTORY' or any parent up to the repo root. Commit a lockfile."
             exit 1
           fi
+          # Root-relative directory holding the lockfile, "." at the repo root.
+          lock_dir="${search#"$root"}"
+          lock_dir="${lock_dir#/}"
+          lock_dir="${lock_dir:-.}"
 
           # pnpm/action-setup gets no version input, so it needs packageManager.
-          if [ "$pm" = pnpm ] && ! grep -Eq '"packageManager"[[:space:]]*:[[:space:]]*"pnpm@' package.json; then
-            echo "::error::pnpm-lock.yaml found, but package.json has no \"packageManager\": \"pnpm@<version>\" field. Add one."
+          if [ "$pm" = pnpm ] && ! grep -Eq '"packageManager"[[:space:]]*:[[:space:]]*"pnpm@' "$search/package.json"; then
+            echo "::error::pnpm-lock.yaml found in '$lock_dir', but its package.json has no \"packageManager\": \"pnpm@<version>\" field. Add one."
             exit 1
           fi
 
-          # Look in working-directory first, then the repo root (monorepos).
+          # A lockfile from a parent only counts if that parent is a workspace
+          # root. Otherwise the package's own dependencies would never install.
+          if [ "$search" != "$(pwd -P)" ]; then
+            not_root=""
+            if [ "$pm" = pnpm ] && [ ! -f "$search/pnpm-workspace.yaml" ]; then
+              not_root="no pnpm-workspace.yaml"
+            elif [ "$pm" = npm ] && ! grep -Eq '"workspaces"[[:space:]]*:' "$search/package.json"; then
+              not_root="no \"workspaces\" in its package.json"
+            fi
+            if [ -n "$not_root" ]; then
+              echo "::error::No lockfile in '$WORKING_DIRECTORY', and '$lock_dir/$lockfile' isn't a workspace root ($not_root). Commit a lockfile."
+              exit 1
+            fi
+            echo "::notice::Using the workspace lockfile $lock_dir/$lockfile."
+          fi
+
+          # Look in working-directory, then the workspace root, then the repo root.
           version="$NODE_VERSION" version_file="" source="node-version input"
           if [ -z "$version" ]; then
-            for candidate in "$dir/.nvmrc" "$dir/.node-version" .nvmrc .node-version; do
+            for candidate in "$dir/.nvmrc" "$dir/.node-version" "$lock_dir/.nvmrc" "$lock_dir/.node-version" .nvmrc .node-version; do
               if [ -f "$GITHUB_WORKSPACE/$candidate" ]; then
                 version_file="$candidate" source="$candidate"
                 break
@@ -107,8 +144,9 @@ jobs:
 
           {
             echo "package-manager=$pm"
-            echo "lockfile=$dir/$lockfile"
-            echo "package-json=$dir/package.json"
+            echo "lock-dir=$lock_dir"
+            echo "lockfile=$lock_dir/$lockfile"
+            echo "package-json=$lock_dir/package.json"
             echo "node-version=$version"
             echo "node-version-file=$version_file"
           } >> "$GITHUB_OUTPUT"
@@ -132,7 +170,10 @@ jobs:
         name: Record Node version
         run: echo "version=$(node --version)" >> "$GITHUB_OUTPUT"
 
+      # Install at the workspace root, where the lockfile is. Scripts still run
+      # in working-directory.
       - name: Install dependencies
+        working-directory: ${{ steps.detect.outputs.lock-dir }}
         env:
           PACKAGE_MANAGER: ${{ steps.detect.outputs.package-manager }}
         run: |

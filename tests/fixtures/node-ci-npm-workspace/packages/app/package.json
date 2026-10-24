@@ -1,0 +1,9 @@
+{
+  "name": "node-ci-npm-workspace-app",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node -e \"console.log('test ok')\"",
+    "build": "node -e \"console.log('build ok')\""
+  }
+}

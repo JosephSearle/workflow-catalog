@@ -26,9 +26,25 @@ jobs:
     with:
       working-directory: tests/fixtures/node-ci-npm
 
+  run-workspace:
+    name: Run node-ci (pnpm workspace member)
+    uses: ./.github/workflows/node-ci.yml
+    permissions:
+      contents: read
+    with:
+      working-directory: tests/fixtures/node-ci-workspace/packages/app
+
+  run-npm-workspace:
+    name: Run node-ci (npm workspace member)
+    uses: ./.github/workflows/node-ci.yml
+    permissions:
+      contents: read
+    with:
+      working-directory: tests/fixtures/node-ci-npm-workspace/packages/app
+
   assert:
     name: Assert node-ci outputs
-    needs: [run-pnpm, run-npm]
+    needs: [run-pnpm, run-npm, run-workspace, run-npm-workspace]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
@@ -41,6 +57,10 @@ jobs:
           NPM_PM: ${{ needs.run-npm.outputs.package-manager }}
           NPM_NODE: ${{ needs.run-npm.outputs.node-version }}
           NPM_SCRIPTS: ${{ needs.run-npm.outputs.scripts-run }}
+          WS_PM: ${{ needs.run-workspace.outputs.package-manager }}
+          WS_SCRIPTS: ${{ needs.run-workspace.outputs.scripts-run }}
+          NPM_WS_PM: ${{ needs.run-npm-workspace.outputs.package-manager }}
+          NPM_WS_SCRIPTS: ${{ needs.run-npm-workspace.outputs.scripts-run }}
         run: |
           fail=0
           check() {
@@ -67,5 +87,12 @@ jobs:
             *[!0-9]* | "") echo "::error::npm node-version: expected vN.x.y, got '$NPM_NODE'."; fail=1 ;;
             *) if [ $((major % 2)) -ne 0 ]; then echo "::error::npm node-version: expected an LTS (even) major, got '$NPM_NODE'."; fail=1; fi ;;
           esac
+
+          # The lockfile is at the workspace root, two levels above working-directory.
+          check "workspace package-manager" "$WS_PM" pnpm
+          check "workspace scripts-run" "$WS_SCRIPTS" "lint test"
+          # The package-lock.json is at the npm workspace root ("workspaces" field).
+          check "npm workspace package-manager" "$NPM_WS_PM" npm
+          check "npm workspace scripts-run" "$NPM_WS_SCRIPTS" "test build"
 
           exit "$fail"
