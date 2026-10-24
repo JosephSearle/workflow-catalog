@@ -1,0 +1,133 @@
+# Internal. Tests actions/lint-shell against the shell-lint fixtures.
+name: _test-action-lint-shell
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  clean:
+    name: Test lint-shell (clean, ${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # Separate shellcheck assets and hashes per architecture.
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - id: subject
+        uses: ./actions/lint-shell
+        with:
+          working-directory: tests/fixtures/shell-lint
+
+      - name: Assert outputs and side effects
+        shell: bash
+        env:
+          RESULT: ${{ steps.subject.outputs.result }}
+          FILES: ${{ steps.subject.outputs.files }}
+          VERSION: ${{ steps.subject.outputs.shellcheck-version }}
+        run: |
+          fail=0
+          check() {
+            if [ "$2" != "$3" ]; then
+              echo "::error::$1: expected '$3', got '$2'."
+              fail=1
+            fi
+          }
+
+          check result "$RESULT" success
+          # bin/deploy is found by its shebang, bin/report (python3) isn't.
+          check files "$FILES" "bin/deploy scripts/build.sh"
+          if ! command -v shellcheck >/dev/null || [ -z "$VERSION" ]; then
+            echo "::error::Expected shellcheck on PATH and shellcheck-version set, got version '$VERSION'."
+            fail=1
+          fi
+          exit "$fail"
+
+  cases:
+    name: Test lint-shell (${{ matrix.case }})
+    strategy:
+      fail-fast: false
+      matrix:
+        case: [findings-warn, findings-fail, no-scripts, missing-directory]
+        include:
+          - case: findings-warn
+            working-directory: tests/fixtures/shell-lint-failing
+            fail-on-findings: "false"
+            outcome: success
+            result: failure
+            files: run.sh
+          - case: findings-fail
+            working-directory: tests/fixtures/shell-lint-failing
+            fail-on-findings: "true"
+            outcome: failure
+            result: failure
+            files: run.sh
+          # The fixture has only a gitleaks config and a text file.
+          - case: no-scripts
+            working-directory: tests/fixtures/shell-lint-secret
+            fail-on-findings: "true"
+            outcome: success
+            result: skipped
+            files: ""
+          - case: missing-directory
+            working-directory: tests/fixtures/does-not-exist
+            fail-on-findings: "false"
+            outcome: failure
+            result: error
+            files: ""
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - id: subject
+        continue-on-error: true
+        uses: ./actions/lint-shell
+        with:
+          working-directory: ${{ matrix.working-directory }}
+          fail-on-findings: ${{ matrix.fail-on-findings }}
+
+      - name: Assert outcome and outputs
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.subject.outcome }}
+          RESULT: ${{ steps.subject.outputs.result }}
+          FILES: ${{ steps.subject.outputs.files }}
+          VERSION: ${{ steps.subject.outputs.shellcheck-version }}
+          EXPECTED_OUTCOME: ${{ matrix.outcome }}
+          EXPECTED_RESULT: ${{ matrix.result }}
+          EXPECTED_FILES: ${{ matrix.files }}
+          CASE: ${{ matrix.case }}
+        run: |
+          fail=0
+          check() {
+            if [ "$2" != "$3" ]; then
+              echo "::error::$CASE $1: expected '$3', got '$2'."
+              fail=1
+            fi
+          }
+
+          check outcome "$OUTCOME" "$EXPECTED_OUTCOME"
+          check result "$RESULT" "$EXPECTED_RESULT"
+          check files "$FILES" "$EXPECTED_FILES"
+          # The action installs shellcheck before the directory check, so later
+          # steps (shell-lint's pre-commit hooks) have it even when the lint
+          # can't run.
+          if ! command -v shellcheck >/dev/null || [ -z "$VERSION" ]; then
+            echo "::error::$CASE: expected shellcheck on PATH and shellcheck-version set, got version '$VERSION'."
+            fail=1
+          fi
+          exit "$fail"

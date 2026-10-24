@@ -1,0 +1,43 @@
+name: lint-shell
+description: >-
+  Runs a pinned, hash-checked shellcheck on the *.sh, *.bash and shebang-detected shell scripts in a
+  directory, honouring .shellcheckrc. Leaves shellcheck on PATH.
+author: JosephSearle
+
+inputs:
+  working-directory:
+    description: Directory to lint, relative to the repo root. shellcheck checks the shell scripts under it.
+    required: false
+    default: "."
+  fail-on-findings:
+    description: >-
+      "true" fails the step when shellcheck finds problems. "false" reports them as a warning and in
+      the result output without failing. A lint that can't run ("error") always fails.
+    required: false
+    default: "true"
+
+outputs:
+  result:
+    description: >-
+      "success", "failure" (findings), "error" (working-directory missing, or shellcheck couldn't be
+      installed or run) or "skipped" (no scripts found).
+    value: ${{ steps.lint.outputs.result }}
+  files:
+    description: Space-separated scripts shellcheck checked, relative to working-directory.
+    value: ${{ steps.lint.outputs.files }}
+  shellcheck-version:
+    description: shellcheck version that was installed, e.g. "v0.11.0". Empty if it couldn't be installed.
+    value: ${{ steps.lint.outputs.shellcheck-version }}
+
+runs:
+  using: composite
+  steps:
+    # Runs from the repo root and changes into working-directory itself, so a
+    # missing directory is reported as result=error.
+    - id: lint
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
+      run: '"$GITHUB_ACTION_PATH/scripts/lint.sh"'

@@ -76,14 +76,9 @@ jobs:
       shellcheck-result: ${{ steps.report.outputs.shellcheck-result }}
       gitleaks-result: ${{ steps.report.outputs.gitleaks-result }}
       pre-commit-result: ${{ steps.report.outputs.pre-commit-result }}
-    # Dependabot can't bump these. To upgrade, pick a release at least 7 days
-    # old, then take the hashes from the release assets' digests (`gh api
-    # repos/koalaman/shellcheck/releases/tags/<tag> -q '.assets[].digest'`).
-    # The gitleaks pin lives in actions/scan-secrets.
+    # The shellcheck and gitleaks pins live in actions/lint-shell and
+    # actions/scan-secrets.
     env:
-      SHELLCHECK_VERSION: v0.11.0
-      SHELLCHECK_SHA256_X64: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
-      SHELLCHECK_SHA256_ARM64: 12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261eaa7e7c14588
       PRE_COMMIT_VERSION: 4.7.0
       # pre-commit and its dependencies come from PyPI without hashes. This
       # cutoff keeps their resolution repeatable; move it with the version.
@@ -142,68 +137,22 @@ jobs:
 
       # .catalog must stay until the job ends, because catalog actions reload
       # it for post steps. Hide it from git, so pre-commit (which lists files
-      # with git) skips it. The shellcheck step prunes it itself.
+      # with git) skips it. lint-shell prunes it itself.
       - name: Exclude catalog checkout from git
         working-directory: .
         run: echo '/.catalog/' >> .git/info/exclude
 
-      - name: Install shellcheck
-        working-directory: ${{ runner.temp }}
-        run: |
-          if [ "$RUNNER_ARCH" = ARM64 ]; then
-            sc_arch=aarch64 sc_sha="$SHELLCHECK_SHA256_ARM64"
-          else
-            sc_arch=x86_64 sc_sha="$SHELLCHECK_SHA256_X64"
-          fi
-          sc_file="shellcheck-$SHELLCHECK_VERSION.linux.$sc_arch.tar.xz"
-
-          curl -fsSL --retry 3 -o "$sc_file" "https://github.com/koalaman/shellcheck/releases/download/$SHELLCHECK_VERSION/$sc_file"
-          printf '%s  %s\n' "$sc_sha" "$sc_file" | sha256sum -c -
-
-          bin="$RUNNER_TEMP/shell-lint-bin"
-          mkdir -p "$bin"
-          tar -xJf "$sc_file" --strip-components=1 -C "$bin" "shellcheck-$SHELLCHECK_VERSION/shellcheck"
-          echo "$bin" >> "$GITHUB_PATH"
-          "$bin/shellcheck" --version
-
       # Checks *.sh and *.bash files, plus any other file with a sh, bash, dash
-      # or ksh shebang. shellcheck reads the caller's .shellcheckrc itself and
-      # follows `source` to files it can find next to the script.
+      # or ksh shebang, and leaves shellcheck on PATH for pre-commit hooks.
+      # Findings don't fail here: the report step decides, so the other
+      # checks still run.
       - id: shellcheck
         name: Run shellcheck
         continue-on-error: true
-        run: |
-          shebang='^#![[:space:]]*/[^[:space:]]*/(env[[:space:]]+(-S[[:space:]]+)?)?(sh|bash|dash|ksh)([[:space:]]|$)'
-          files=()
-          while IFS= read -r -d '' file; do
-            file="${file#./}"
-            if [[ "$file" == *$'\n'* ]]; then
-              echo "::warning::Skipping a file whose name contains a newline."
-              continue
-            fi
-            case "$file" in
-              *.sh|*.bash) files+=("$file") ;;
-              *)
-                if head -n 1 -- "$file" 2>/dev/null | grep -Eq "$shebang"; then
-                  files+=("$file")
-                fi
-                ;;
-            esac
-          done < <(find . \( -name .git -o -name node_modules -o -name .venv -o -path ./.catalog \) -prune -o -type f -print0 | sort -z)
-
-          echo "files=${files[*]}" >> "$GITHUB_OUTPUT"
-          echo "count=${#files[@]}" >> "$GITHUB_OUTPUT"
-          if [ "${#files[@]}" -eq 0 ]; then
-            echo "::notice::No shell scripts found, so shellcheck was skipped."
-            exit 0
-          fi
-          echo "Checking ${#files[@]} file(s):"
-          printf '  %s\n' "${files[@]}"
-          # Exit 1 means findings. Anything else is shellcheck itself failing.
-          status=0
-          shellcheck --external-sources --source-path=SCRIPTDIR -- "${files[@]}" || status=$?
-          echo "status=$status" >> "$GITHUB_OUTPUT"
-          exit "$status"
+        uses: ./.catalog/actions/lint-shell
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          fail-on-findings: "false"
 
       # Scans the whole Git history from the repo root, and leaves gitleaks on
       # PATH for pre-commit hooks. Findings don't fail here: the report step
@@ -238,23 +187,20 @@ jobs:
       - id: report
         name: Report results
         env:
-          SHELLCHECK_OUTCOME: ${{ steps.shellcheck.outcome }}
-          SHELLCHECK_COUNT: ${{ steps.shellcheck.outputs.count }}
-          SHELLCHECK_STATUS: ${{ steps.shellcheck.outputs.status }}
+          SHELLCHECK_RESULT: ${{ steps.shellcheck.outputs.result }}
+          SHELLCHECK_FILES: ${{ steps.shellcheck.outputs.files }}
+          SHELLCHECK_VERSION: ${{ steps.shellcheck.outputs.shellcheck-version }}
           GITLEAKS_RESULT: ${{ steps.gitleaks.outputs.result }}
           GITLEAKS_VERSION: ${{ steps.gitleaks.outputs.gitleaks-version }}
           PRE_COMMIT_OUTCOME: ${{ steps.pre-commit.outcome }}
           FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
         run: |
-          # Only the tools' own "findings" exit codes count as failure.
-          shellcheck_result="$SHELLCHECK_OUTCOME"
-          if [ "$shellcheck_result" = success ] && [ "${SHELLCHECK_COUNT:-0}" -eq 0 ]; then
-            shellcheck_result=skipped
-          elif [ "$shellcheck_result" = failure ] && [ "$SHELLCHECK_STATUS" != 1 ]; then
-            shellcheck_result=error
-          fi
-          # scan-secrets always sets result. Treat a missing one as an error.
+          # lint-shell and scan-secrets always set result. Treat a missing one
+          # as an error.
+          shellcheck_result="${SHELLCHECK_RESULT:-error}"
           gitleaks_result="${GITLEAKS_RESULT:-error}"
+          read -ra shellcheck_files <<< "$SHELLCHECK_FILES"
+          shellcheck_count="${#shellcheck_files[@]}"
           {
             echo "shellcheck-result=$shellcheck_result"
             echo "gitleaks-result=$gitleaks_result"
@@ -265,7 +211,7 @@ jobs:
             echo
             echo "| Check | Result |"
             echo "| --- | --- |"
-            echo "| shellcheck ($SHELLCHECK_VERSION, ${SHELLCHECK_COUNT:-0} files) | $shellcheck_result |"
+            echo "| shellcheck (${SHELLCHECK_VERSION:-?}, $shellcheck_count files) | $shellcheck_result |"
             echo "| gitleaks (v${GITLEAKS_VERSION:-?}, full history) | $gitleaks_result |"
             echo "| pre-commit | $PRE_COMMIT_OUTCOME |"
           } >> "$GITHUB_STEP_SUMMARY"
