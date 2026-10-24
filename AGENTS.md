@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this repository.
 
 ## What this repo is
 
-A catalog of reusable GitHub Actions workflows and composite actions that JosephSearle's other repos call by Git ref. It's YAML and shell only: there's no build step. The whole repo is released under a single semver version. The first public workflow is `node-ci`. There are no actions yet.
+A catalog of reusable GitHub Actions workflows and composite actions that JosephSearle's other repos call by Git ref. It's YAML and shell only: there's no build step. The whole repo is released under a single semver version. The public workflows are `node-ci` and `python-ci`, released from `v1.0.0`. There are no actions yet.
 
 ## Commands
 
@@ -43,7 +43,7 @@ Then add a row to the Catalog table in `README.md`. List actions in `actions/REA
 
 **Template pins.** Dependabot doesn't scan `templates/`, so `scripts/template-pins.sh` copies the SHA pins from live files in `.github/workflows/` and `actions/` into the templates. `make new-*` runs the sync on each file it generates. Templates use `__NAME__` placeholders, which `sed` replaces.
 
-**Releases.** release-please (`_release.yml`) runs on each push to main and needs a GitHub App token (`vars.RELEASE_APP_CLIENT_ID`, `secrets.RELEASE_APP_PRIVATE_KEY`), because PRs created with `GITHUB_TOKEN` don't trigger CI. Until that variable is set, the job is skipped. Merging the release PR tags an immutable `vX.Y.Z`. From v1 on, it also moves the floating `vX` tag. There's no `v0` tag, and before 1.0.0 breaking changes bump the minor version.
+**Releases.** release-please (`_release.yml`) runs on each push to main and needs a GitHub App token (`vars.RELEASE_APP_CLIENT_ID`, `secrets.RELEASE_APP_PRIVATE_KEY`), because PRs created with `GITHUB_TOKEN` don't trigger CI. The app is the only bypass actor on the `v*` tag ruleset. Merging the release PR tags an immutable `vX.Y.Z` and moves the floating `vX` tag. Breaking changes now need a new major version.
 
 ## Security rules for every workflow and action
 
