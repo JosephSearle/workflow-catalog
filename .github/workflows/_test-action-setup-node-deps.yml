@@ -29,6 +29,8 @@ jobs:
             lock-dir: tests/fixtures/node-ci-npm
             # No .nvmrc, so lts/*. The assert only checks it's an even major.
             node-major: lts
+            # The fixture has no dependencies, so npm ci creates no node_modules.
+            node-modules: "false"
           - case: pnpm-workspace
             working-directory: tests/fixtures/node-ci-workspace/packages/app
             node-version: ""
@@ -72,6 +74,7 @@ jobs:
           EXPECTED_PM: ${{ matrix.package-manager }}
           EXPECTED_LOCK_DIR: ${{ matrix.lock-dir }}
           EXPECTED_MAJOR: ${{ matrix.node-major }}
+          EXPECTED_NODE_MODULES: ${{ matrix.node-modules }}
         run: |
           fail=0
           check() {
@@ -96,7 +99,7 @@ jobs:
             check "node major" "$major" "$EXPECTED_MAJOR"
           fi
 
-          if [ ! -d "$LOCK_DIR/node_modules" ]; then
+          if [ "$EXPECTED_NODE_MODULES" != false ] && [ ! -d "$LOCK_DIR/node_modules" ]; then
             echo "::error::Expected dependencies installed in $LOCK_DIR/node_modules."
             fail=1
           fi
