@@ -1,0 +1,35 @@
+name: New reusable workflow
+description: Propose a workflow for consumer repos to call.
+title: "feat: add <domain>-<purpose> workflow"
+labels: [new-workflow]
+body:
+  - type: input
+    id: name
+    attributes:
+      label: File name
+      description: Kebab-case `<domain>-<purpose>`. This becomes public API and can't be renamed without a major release.
+      placeholder: node-ci
+    validations:
+      required: true
+  - type: textarea
+    id: purpose
+    attributes:
+      label: Purpose
+      description: What the workflow does and which repos will call it.
+    validations:
+      required: true
+  - type: textarea
+    id: contract
+    attributes:
+      label: Contract
+      description: Inputs, outputs, secrets and permissions the caller must grant.
+      placeholder: |
+        inputs: node-version (string, default "22"), working-directory (string, default ".")
+        outputs: coverage-percent
+        secrets: NPM_TOKEN (optional)
+        permissions: contents:read
+  - type: textarea
+    id: actions
+    attributes:
+      label: Actions used
+      description: Catalog actions it reuses or needs created, plus any third-party actions.

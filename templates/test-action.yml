@@ -1,0 +1,38 @@
+# Internal. Tests actions/__NAME__.
+name: _test-action-__NAME__
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  test:
+    name: Test __NAME__ (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - id: subject
+        uses: ./actions/__NAME__
+        with:
+          example-input: expected
+
+      - name: Assert outputs
+        shell: bash
+        env:
+          ACTUAL: ${{ steps.subject.outputs.example-output }}
+        run: |
+          if [ "$ACTUAL" != "expected" ]; then
+            echo "::error::Expected example-output 'expected', got '$ACTUAL'."
+            exit 1
+          fi

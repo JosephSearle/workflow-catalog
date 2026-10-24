@@ -1,0 +1,112 @@
+# Internal. Runs on every PR. `ci-ok` is the only required status check.
+#
+# To register a new component:
+#   1. Add a filter under `changes.steps.filter.with.filters`.
+#   2. Expose it under `changes.outputs`.
+#   3. Add a job that calls its `_test-*.yml` when the filter matched.
+#   4. Add that job to `ci-ok.needs`.
+name: _ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  merge_group:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      catalog: ${{ steps.filter.outputs.catalog }}
+      # <name>: ${{ steps.filter.outputs.<name> }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          # Each test filter includes its own test workflow and fixtures.
+          filters: |
+            catalog:
+              - '.github/workflows/**'
+              - 'actions/**'
+              - 'templates/**'
+              - 'tests/**'
+            # action-<name>:
+            #   - 'actions/<name>/**'
+            #   - '.github/workflows/_test-action-<name>.yml'
+            # wf-<name>:
+            #   - '.github/workflows/<name>.yml'
+            #   - '.github/workflows/_test-wf-<name>.yml'
+            #   - 'tests/fixtures/<stack>/**'
+
+  pr-title:
+    name: PR title
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      # Squash merges use the PR title as the commit, which drives release-please.
+      - name: Check Conventional Commit format
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          pattern='^(feat|fix|deps|perf|refactor|revert|docs|ci|chore|test)(\([a-z0-9-]+\))?!?: .+'
+          if ! printf '%s' "$TITLE" | grep -Eq "$pattern"; then
+            echo "::error::PR title '$TITLE' isn't a Conventional Commit."
+            echo "::error::Use '<type>(<scope>)?: <description>', e.g. 'feat(node-ci): add coverage output'. See CONTRIBUTING.md."
+            exit 1
+          fi
+
+  lint:
+    name: Lint
+    uses: ./.github/workflows/_lint.yml
+    permissions:
+      contents: read
+      security-events: write
+
+  # test-action-<name>:
+  #   name: Test action <name>
+  #   needs: changes
+  #   if: needs.changes.outputs.action-<name> == 'true'
+  #   uses: ./.github/workflows/_test-action-<name>.yml
+  #   permissions:
+  #     contents: read
+
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs:
+      - changes
+      - pr-title
+      - lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check required jobs
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Job results: $RESULTS"
+          for result in $RESULTS; do
+            case "$result" in
+              success|skipped) ;;
+              *) echo "::error::A required job ended with '$result'. Check the jobs above."; exit 1 ;;
+            esac
+          done

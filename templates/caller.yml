@@ -1,0 +1,24 @@
+# Copy to .github/workflows/ in a consumer repo.
+# Pin to a full SHA (Dependabot keeps it current), or use @v1 for convenience.
+name: __NAME__
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  __NAME__:
+    uses: JosephSearle/workflow-catalog/.github/workflows/__NAME__.yml@v0
+    permissions:
+      contents: read
+    # with:
+    #   working-directory: .
+    # secrets:
+    #   EXAMPLE_TOKEN: ${{ secrets.EXAMPLE_TOKEN }}

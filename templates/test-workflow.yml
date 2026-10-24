@@ -1,0 +1,33 @@
+# Internal. Tests .github/workflows/__NAME__.yml against fixtures.
+name: _test-wf-__NAME__
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  run:
+    name: Run __NAME__
+    # Local ref: tests the version in this commit/PR.
+    uses: ./.github/workflows/__NAME__.yml
+    permissions:
+      contents: read
+    with:
+      working-directory: tests/fixtures/__NAME__
+
+  assert:
+    name: Assert __NAME__ outputs
+    needs: run
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check outputs
+        env:
+          RESULT: ${{ needs.run.outputs.result }}
+        run: |
+          if [ "$RESULT" != "ok" ]; then
+            echo "::error::Expected result 'ok', got '$RESULT'."
+            exit 1
+          fi

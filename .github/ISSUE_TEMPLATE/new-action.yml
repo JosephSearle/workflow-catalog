@@ -1,0 +1,40 @@
+name: New action
+description: Propose a reusable action for catalog workflows.
+title: "feat: add <name> action"
+labels: [new-action]
+body:
+  - type: input
+    id: name
+    attributes:
+      label: Name
+      description: Kebab-case verb-noun, e.g. `setup-node-cached`.
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options:
+        - Composite
+        - TypeScript
+    validations:
+      required: true
+  - type: textarea
+    id: purpose
+    attributes:
+      label: Purpose
+      description: What it does and which workflows will use it.
+    validations:
+      required: true
+  - type: textarea
+    id: contract
+    attributes:
+      label: Inputs and outputs
+  - type: checkboxes
+    id: os
+    attributes:
+      label: Supported runners
+      options:
+        - label: ubuntu
+        - label: macos
+        - label: windows

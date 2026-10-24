@@ -1,0 +1,10 @@
+paths:
+  "**/*.yml":
+    ignore:
+      # job.workflow_repository / job.workflow_sha were added to GitHub Actions in Sept 2026.
+      # Remove once actionlint knows them.
+      - 'property "workflow_(repository|sha|ref|file_path)" is not defined in object type'
+  templates/test-workflow.yml:
+    ignore:
+      # Points at __NAME__.yml, which only exists after `make new-workflow`.
+      - 'could not read reusable workflow file for "\./\.github/workflows/__NAME__\.yml"'

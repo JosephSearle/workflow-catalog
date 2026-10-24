@@ -1,0 +1,25 @@
+name: __NAME__
+description: One sentence describing what __NAME__ does.
+author: JosephSearle
+
+inputs:
+  example-input:
+    description: What this input controls.
+    required: false
+    default: "value"
+
+outputs:
+  example-output:
+    description: What this output contains.
+    value: ${{ steps.main.outputs.example-output }}
+
+runs:
+  using: composite
+  steps:
+    # Pass inputs through env. Never interpolate ${{ }} directly into `run:`.
+    - id: main
+      shell: bash
+      env:
+        EXAMPLE_INPUT: ${{ inputs.example-input }}
+      run: |
+        echo "example-output=${EXAMPLE_INPUT}" >> "$GITHUB_OUTPUT"
