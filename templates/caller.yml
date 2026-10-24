@@ -1,0 +1,24 @@
+# Copy to .github/workflows/ in a consumer repo.
+# Replace <sha> # vX.Y.Z with a release's full commit SHA and tag. Dependabot keeps it current.
+name: __NAME__
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  __NAME__:
+    uses: JosephSearle/workflow-catalog/.github/workflows/__NAME__.yml@<sha> # vX.Y.Z
+    permissions:
+      contents: read
+    # with:
+    #   working-directory: .
+    # secrets:
+    #   EXAMPLE_TOKEN: ${{ secrets.EXAMPLE_TOKEN }}

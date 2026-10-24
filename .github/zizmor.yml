@@ -1,0 +1,5 @@
+rules:
+  self-repository:
+    # Prefer `./.github/workflows/...` until actionlint supports the `$/` syntax.
+    # actionlint validates inputs of `./` calls, which is worth more than the newer syntax.
+    disable: true

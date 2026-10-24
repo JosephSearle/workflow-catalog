@@ -1,0 +1,56 @@
+# Public. Called by consumer repos. The file name is public API: renaming it is a breaking change.
+# Docs: README.md#__NAME__   Example caller: examples/callers/__NAME__.yml
+name: __NAME__
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Directory to run in, relative to the repo root.
+        type: string
+        required: false
+        default: "."
+    outputs:
+      result:
+        description: Example output.
+        value: ${{ jobs.main.outputs.result }}
+    # secrets:
+    #   EXAMPLE_TOKEN:
+    #     description: What the secret is used for.
+    #     required: true
+
+permissions: {}
+
+jobs:
+  main:
+    name: Main
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ steps.example.outputs.result }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Check out caller repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Check out the catalog at the exact commit of this workflow so that
+      # catalog actions always match the workflow's version.
+      - name: Check out catalog
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .catalog
+          persist-credentials: false
+
+      # - uses: ./.catalog/actions/<name>
+
+      - id: example
+        name: Example step
+        run: echo "result=ok" >> "$GITHUB_OUTPUT"

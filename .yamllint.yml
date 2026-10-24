@@ -1,0 +1,21 @@
+extends: default
+
+ignore: |
+  node_modules/
+  dist/
+
+rules:
+  document-start: disable
+  line-length:
+    max: 160
+  truthy:
+    # `on:` is a GitHub Actions keyword, not a boolean.
+    allowed-values: ["true", "false"]
+    check-keys: false
+  comments:
+    min-spaces-from-content: 1
+  indentation:
+    spaces: 2
+    indent-sequences: consistent
+  # Templates use commented-out blocks at sibling-key indentation.
+  comments-indentation: disable

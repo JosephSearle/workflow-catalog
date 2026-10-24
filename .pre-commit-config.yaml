@@ -1,0 +1,36 @@
+# Install: pre-commit install
+# Run all: pre-commit run --all-files
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-json
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: check-merge-conflict
+
+  - repo: https://github.com/adrienverge/yamllint
+    rev: cba56bcde1fdd01c1deb3f945e69764c291a6530 # v1.38.0
+    hooks:
+      - id: yamllint
+        args: [--strict]
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: 914e7df21a07ef503a81201c76d2b11c789d3fca # v1.7.12
+    hooks:
+      - id: actionlint-docker
+
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0494aa7fa1314e98913a41227d8f0a515b2c1049 # 0.38.2
+    hooks:
+      - id: check-github-workflows
+      - id: check-github-actions
+        files: ^(actions/[^/]+|templates/action)/action\.ya?ml$
+      - id: check-dependabot
+
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: c92afdf2c6ca336aaa8f39e2bd8d48f62dbd8e1f # v1.31.1
+    hooks:
+      - id: zizmor

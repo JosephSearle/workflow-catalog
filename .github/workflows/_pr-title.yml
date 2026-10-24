@@ -1,0 +1,36 @@
+# Internal. Required status check `PR title`. Kept out of _ci.yml so that
+# editing a PR reruns only this cheap check, not the whole CI graph.
+name: _pr-title
+
+on:
+  pull_request:
+    # `edited` reruns the check after a title fix.
+    types: [opened, synchronize, reopened, edited]
+  # Required checks must report in the merge queue too. The job is skipped there, which counts as passing.
+  merge_group:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pr-title:
+    name: PR title
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      # Squash merges use the PR title as the commit, which drives release-please.
+      - name: Check Conventional Commit format
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          pattern='^(feat|fix|deps|perf|refactor|revert|docs|ci|chore|test)(\([a-z0-9-]+\))?!?: .+'
+          if ! printf '%s' "$TITLE" | grep -Eq "$pattern"; then
+            echo "::error::PR title '$TITLE' isn't a Conventional Commit."
+            echo "::error::Use '<type>(<scope>)?: <description>', e.g. 'feat(node-ci): add coverage output'. See CONTRIBUTING.md."
+            exit 1
+          fi

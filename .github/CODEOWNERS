@@ -1,0 +1,12 @@
+# Last matching rule wins. Keep the catch-all first.
+*                     @JosephSearle
+
+# Public API and CI. Changes here affect every consumer repo.
+/.github/             @JosephSearle
+/actions/             @JosephSearle
+
+# Claude Code hooks run shell on contributors' machines.
+/.claude/             @JosephSearle
+
+# Protect this file so review requirements can't be edited away.
+/.github/CODEOWNERS   @JosephSearle

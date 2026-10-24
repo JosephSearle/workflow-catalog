@@ -1,0 +1,46 @@
+# Internal. Static checks for workflows, actions and templates.
+name: _lint
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: false
+
+      - name: Run linters
+        run: make lint-ci
+
+  zizmor:
+    name: Security audit (zizmor)
+    # On push to main, _ci.yml's zizmor-sarif job runs the same audit.
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: zizmorcore/zizmor-action@53290badfa369cb0bf7ad16342cb62c2fa47ac7b # v0.8.0
+        with:
+          version: 1.31.1
+          # Fail directly on findings, so forks and maintainers are gated the
+          # same way. _ci.yml's zizmor-sarif job uploads SARIF on push to main.
+          advanced-security: false

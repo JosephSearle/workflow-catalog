@@ -1,0 +1,16 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /actions/*
+      # templates/ isn't scannable. `make new-*` syncs scaffolded pins to these; `make sync-template-pins` tidies templates/.
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: deps
+    groups:
+      github-actions:
+        patterns: ["*"]
+    cooldown:
+      default-days: 7
