@@ -1,6 +1,6 @@
 # Test fixtures
 
-Small sample projects that public workflows run against in their `_test-wf-*` workflows. One directory per workflow or stack, e.g. `tests/fixtures/node-ci/`.
+Small sample projects that public workflows and actions run against in their `_test-wf-*` and `_test-action-*` workflows. One directory per workflow or stack, e.g. `tests/fixtures/node-ci/`. Actions reuse the fixtures of the workflow they came from and add their own only for cases it doesn't cover, e.g. `setup-node-deps-failing/`.
 
 Rules:
 

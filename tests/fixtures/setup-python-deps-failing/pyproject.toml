@@ -1,0 +1,5 @@
+# No uv.lock here or in any parent, so setup-python-deps must fail.
+[project]
+name = "setup-python-deps-failing-fixture"
+version = "0.0.0"
+requires-python = ">=3.12"

@@ -60,7 +60,7 @@ jobs:
     permissions:
       contents: read
     outputs:
-      python-version: ${{ steps.python.outputs.version }}
+      python-version: ${{ steps.setup.outputs.python-version }}
       commands-run: ${{ steps.run.outputs.commands-run }}
     defaults:
       run:
@@ -72,72 +72,36 @@ jobs:
         with:
           persist-credentials: false
 
-      # setup-uv may resolve relative globs against its working-directory, so
-      # detect emits an absolute lockfile path.
-      - id: detect
-        name: Detect lockfile and Python version source
-        env:
-          WORKING_DIRECTORY: ${{ inputs.working-directory }}
-          PYTHON_VERSION: ${{ inputs.python-version }}
-        run: |
-          if [ ! -f pyproject.toml ]; then
-            echo "::error::No pyproject.toml in '$WORKING_DIRECTORY'."
-            exit 1
-          fi
-
-          # Walk up from working-directory to the repo root, as uv does for
-          # workspaces, and take the first uv.lock.
-          root="$(cd "$GITHUB_WORKSPACE" && pwd -P)"
-          search="$(pwd -P)"
-          lockfile=""
-          while :; do
-            if [ -f "$search/uv.lock" ]; then
-              lockfile="$search/uv.lock"
-              break
-            fi
-            if [ "$search" = "$root" ] || [ "$search" = / ]; then
-              break
-            fi
-            search="$(dirname "$search")"
-          done
-          if [ -z "$lockfile" ]; then
-            echo "::error::No uv.lock in '$WORKING_DIRECTORY' or any parent up to the repo root. Run 'uv lock' and commit it."
-            exit 1
-          fi
-
-          if [ -n "$PYTHON_VERSION" ]; then
-            echo "::notice::Python version from the python-version input."
-          elif [ -f .python-version ]; then
-            echo "::notice::Python version from $WORKING_DIRECTORY/.python-version."
-          else
-            echo "::notice::No .python-version in '$WORKING_DIRECTORY', so uv checks parent directories, then requires-python."
-          fi
-
-          echo "lockfile=$lockfile" >> "$GITHUB_OUTPUT"
-
-      # An empty python-version leaves the choice to uv.
-      - name: Set up uv
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      # Check out the catalog at the exact commit of this workflow so that
+      # catalog actions always match the workflow's version.
+      - name: Check out catalog
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          python-version: ${{ inputs.python-version }}
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .catalog
+          sparse-checkout: /actions/
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - id: setup
+        name: Set up uv and install dependencies
+        uses: ./.catalog/actions/setup-python-deps
+        with:
           working-directory: ${{ inputs.working-directory }}
-          enable-cache: true
-          cache-dependency-glob: ${{ steps.detect.outputs.lockfile }}
+          python-version: ${{ inputs.python-version }}
 
-      - name: Install dependencies
-        run: uv sync --locked
-
-      - id: python
-        name: Record Python version
-        run: |
-          version="$(uv run --no-sync python -c 'import platform; print(platform.python_version())')"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+      # .catalog must stay until the job ends: the action's post steps (cache
+      # save) reload it from there. Hide it from git and gitignore-aware tools.
+      - name: Exclude catalog checkout from git
+        working-directory: .
+        run: echo '/.catalog/' >> .git/info/exclude
 
       - id: run
         name: Run commands
         env:
           COMMANDS: ${{ inputs.commands }}
-          PYTHON_VERSION: ${{ steps.python.outputs.version }}
+          PYTHON_VERSION: ${{ steps.setup.outputs.python-version }}
         run: |
           # Only run tools installed in the project environment, not ones that
           # happen to be on the runner's PATH.

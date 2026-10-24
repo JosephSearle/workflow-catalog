@@ -1,0 +1,132 @@
+# Internal. Tests actions/setup-python-deps against the python-ci fixtures.
+name: _test-action-setup-python-deps
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  test:
+    name: Test setup-python-deps (${{ matrix.case }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        case: [python-version-file, requires-python, python-version-input, workspace-member]
+        include:
+          - case: python-version-file
+            working-directory: tests/fixtures/python-ci
+            python-version: ""
+            lock-dir: tests/fixtures/python-ci
+            # From the fixture's .python-version.
+            python-minor: "3.12"
+          - case: requires-python
+            # No .python-version, so uv honours requires-python = ">=3.13".
+            working-directory: tests/fixtures/python-ci-bare
+            python-version: ""
+            lock-dir: tests/fixtures/python-ci-bare
+            python-minor: ">=3.13"
+          - case: python-version-input
+            # The input overrides the fixture's .python-version (3.12).
+            working-directory: tests/fixtures/python-ci
+            python-version: "3.13"
+            lock-dir: tests/fixtures/python-ci
+            python-minor: "3.13"
+          - case: workspace-member
+            # uv.lock is at the workspace root, two levels up.
+            working-directory: tests/fixtures/python-ci-workspace/packages/app
+            python-version: ""
+            lock-dir: tests/fixtures/python-ci-workspace
+            python-minor: ">=3.12"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - id: subject
+        uses: ./actions/setup-python-deps
+        with:
+          working-directory: ${{ matrix.working-directory }}
+          python-version: ${{ matrix.python-version }}
+
+      - name: Assert outputs and side effects
+        shell: bash
+        env:
+          PYTHON: ${{ steps.subject.outputs.python-version }}
+          LOCK_DIR: ${{ steps.subject.outputs.lock-dir }}
+          EXPECTED_LOCK_DIR: ${{ matrix.lock-dir }}
+          EXPECTED_MINOR: ${{ matrix.python-minor }}
+        run: |
+          fail=0
+          check() {
+            if [ "$2" != "$3" ]; then
+              echo "::error::$1: expected '$3', got '$2'."
+              fail=1
+            fi
+          }
+
+          check lock-dir "$LOCK_DIR" "$EXPECTED_LOCK_DIR"
+
+          minor="${PYTHON#3.}"
+          minor="${minor%%.*}"
+          case "$EXPECTED_MINOR" in
+            ">=3."*)
+              if [ "${PYTHON%%.*}" != 3 ] || [ "$minor" -lt "${EXPECTED_MINOR#>=3.}" ]; then
+                echo "::error::python-version: expected $EXPECTED_MINOR, got '$PYTHON'."
+                fail=1
+              fi
+              ;;
+            *) check "python minor" "3.$minor" "$EXPECTED_MINOR" ;;
+          esac
+
+          # uv sync --locked creates the environment next to uv.lock, which is
+          # the workspace root for a member.
+          if [ ! -d "$LOCK_DIR/.venv" ]; then
+            echo "::error::Expected uv sync to create $LOCK_DIR/.venv."
+            fail=1
+          fi
+
+          exit "$fail"
+
+  failure-path:
+    name: Test setup-python-deps fails (${{ matrix.case }})
+    strategy:
+      fail-fast: false
+      matrix:
+        case: [no-pyproject, no-lockfile]
+        include:
+          - case: no-pyproject
+            working-directory: tests/fixtures
+          # pyproject.toml, but no uv.lock in it or any parent.
+          - case: no-lockfile
+            working-directory: tests/fixtures/setup-python-deps-failing
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - id: subject
+        continue-on-error: true
+        uses: ./actions/setup-python-deps
+        with:
+          working-directory: ${{ matrix.working-directory }}
+
+      - name: Assert failure
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.subject.outcome }}
+          CASE: ${{ matrix.case }}
+        run: |
+          if [ "$OUTCOME" != failure ]; then
+            echo "::error::Expected setup-python-deps to fail ($CASE), got '$OUTCOME'."
+            exit 1
+          fi

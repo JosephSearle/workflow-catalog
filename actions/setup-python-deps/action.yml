@@ -1,0 +1,61 @@
+name: setup-python-deps
+description: >-
+  Finds uv.lock (including in a uv workspace root), sets up uv with caching and the requested Python,
+  then runs `uv sync --locked`.
+author: JosephSearle
+
+inputs:
+  working-directory:
+    description: >-
+      Directory containing pyproject.toml, relative to the repo root. uv.lock may be here or in a
+      parent directory (uv workspaces). In a workspace member, only that member's dependency groups
+      are installed.
+    required: false
+    default: "."
+  python-version:
+    description: >-
+      Python version request, e.g. "3.12". Empty lets uv resolve it: .python-version, then
+      requires-python in pyproject.toml.
+    required: false
+    default: ""
+
+outputs:
+  python-version:
+    description: Python version in the project environment, e.g. "3.12.7".
+    value: ${{ steps.python.outputs.version }}
+  lock-dir:
+    description: Directory holding uv.lock, relative to the repo root ("." at the root).
+    value: ${{ steps.detect.outputs.lock-dir }}
+
+runs:
+  using: composite
+  steps:
+    - id: detect
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        PYTHON_VERSION: ${{ inputs.python-version }}
+      run: '"$GITHUB_ACTION_PATH/scripts/detect.sh"'
+
+    # An empty python-version leaves the choice to uv.
+    - name: Set up uv
+      uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      with:
+        python-version: ${{ inputs.python-version }}
+        working-directory: ${{ inputs.working-directory }}
+        enable-cache: true
+        cache-dependency-glob: ${{ steps.detect.outputs.lockfile }}
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: uv sync --locked
+
+    - id: python
+      name: Record Python version
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        version="$(uv run --no-sync python -c 'import platform; print(platform.python_version())')"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
