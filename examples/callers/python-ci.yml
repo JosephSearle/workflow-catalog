@@ -1,0 +1,33 @@
+# Copy to .github/workflows/ in a consumer repo.
+# Replace <sha> # vX.Y.Z with a release's full commit SHA and tag. Dependabot keeps it current.
+name: python-ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  python-ci:
+    uses: JosephSearle/workflow-catalog/.github/workflows/python-ci.yml@<sha> # vX.Y.Z
+    permissions:
+      contents: read
+    # Defaults shown. Needs pyproject.toml and a committed uv.lock (working-directory or a
+    # parent). Python comes from .python-version, then requires-python. Put ruff, pyright
+    # and pytest in the dev dependency group; commands whose tool isn't installed are skipped.
+    # with:
+    #   working-directory: .
+    #   python-version: ""
+    #   commands: |
+    #     ruff check
+    #     ruff format --check
+    #     pyright
+    #     pytest
+    #   runs-on: ubuntu-latest  # the only runner the catalog tests
+    #   timeout-minutes: 15

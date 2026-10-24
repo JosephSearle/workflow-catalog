@@ -1,0 +1,179 @@
+# Public. Called by consumer repos. The file name is public API: renaming it is a breaking change.
+# Docs: README.md#workflows   Example caller: examples/callers/python-ci.yml
+name: python-ci
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: >-
+          Directory containing pyproject.toml, relative to the repo root. uv.lock may be here or in a
+          parent directory (uv workspaces). In a workspace member, only that member's dependency groups
+          are installed, so put dev tools in the member's dev group.
+        type: string
+        required: false
+        default: "."
+      python-version:
+        description: >-
+          Python version request, e.g. "3.12". Empty lets uv resolve it: .python-version, then
+          requires-python in pyproject.toml.
+        type: string
+        required: false
+        default: ""
+      commands:
+        description: >-
+          Commands to run in order with `uv run`, one per line. Each line is split on whitespace,
+          so shell syntax isn't supported. Commands whose tool isn't installed in the project
+          environment are skipped with a notice.
+        type: string
+        required: false
+        default: |
+          ruff check
+          ruff format --check
+          pyright
+          pytest
+      runs-on:
+        description: Runner label for the job.
+        type: string
+        required: false
+        default: ubuntu-latest
+      timeout-minutes:
+        description: Job timeout in minutes.
+        type: number
+        required: false
+        default: 15
+    outputs:
+      python-version:
+        description: Python version that ran, e.g. "3.12.7".
+        value: ${{ jobs.ci.outputs.python-version }}
+      commands-run:
+        description: Commands that ran, one per line, in order.
+        value: ${{ jobs.ci.outputs.commands-run }}
+
+permissions: {}
+
+jobs:
+  ci:
+    name: Python CI
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    permissions:
+      contents: read
+    outputs:
+      python-version: ${{ steps.python.outputs.version }}
+      commands-run: ${{ steps.run.outputs.commands-run }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Check out caller repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # setup-uv may resolve relative globs against its working-directory, so
+      # detect emits an absolute lockfile path.
+      - id: detect
+        name: Detect lockfile and Python version source
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+          PYTHON_VERSION: ${{ inputs.python-version }}
+        run: |
+          if [ ! -f pyproject.toml ]; then
+            echo "::error::No pyproject.toml in '$WORKING_DIRECTORY'."
+            exit 1
+          fi
+
+          # Walk up from working-directory to the repo root, as uv does for
+          # workspaces, and take the first uv.lock.
+          root="$(cd "$GITHUB_WORKSPACE" && pwd -P)"
+          search="$(pwd -P)"
+          lockfile=""
+          while :; do
+            if [ -f "$search/uv.lock" ]; then
+              lockfile="$search/uv.lock"
+              break
+            fi
+            if [ "$search" = "$root" ] || [ "$search" = / ]; then
+              break
+            fi
+            search="$(dirname "$search")"
+          done
+          if [ -z "$lockfile" ]; then
+            echo "::error::No uv.lock in '$WORKING_DIRECTORY' or any parent up to the repo root. Run 'uv lock' and commit it."
+            exit 1
+          fi
+
+          if [ -n "$PYTHON_VERSION" ]; then
+            echo "::notice::Python version from the python-version input."
+          elif [ -f .python-version ]; then
+            echo "::notice::Python version from $WORKING_DIRECTORY/.python-version."
+          else
+            echo "::notice::No .python-version in '$WORKING_DIRECTORY', so uv checks parent directories, then requires-python."
+          fi
+
+          echo "lockfile=$lockfile" >> "$GITHUB_OUTPUT"
+
+      # An empty python-version leaves the choice to uv.
+      - name: Set up uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: ${{ inputs.python-version }}
+          working-directory: ${{ inputs.working-directory }}
+          enable-cache: true
+          cache-dependency-glob: ${{ steps.detect.outputs.lockfile }}
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - id: python
+        name: Record Python version
+        run: |
+          version="$(uv run --no-sync python -c 'import platform; print(platform.python_version())')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - id: run
+        name: Run commands
+        env:
+          COMMANDS: ${{ inputs.commands }}
+          PYTHON_VERSION: ${{ steps.python.outputs.version }}
+        run: |
+          # Only run tools installed in the project environment, not ones that
+          # happen to be on the runner's PATH.
+          scripts="$(uv run --no-sync python -c 'import sysconfig; print(sysconfig.get_path("scripts"))')"
+          ran=()
+          while IFS= read -r line; do
+            read -ra args <<< "$line"
+            [ "${#args[@]}" -eq 0 ] && continue
+            if [ ! -x "$scripts/${args[0]}" ]; then
+              echo "::notice::Skipping '${args[*]}': ${args[0]} isn't installed in the project environment."
+              continue
+            fi
+            echo "::group::uv run ${args[*]}"
+            uv run --no-sync -- "${args[@]}"
+            echo "::endgroup::"
+            ran+=("${args[*]}")
+          done <<< "$COMMANDS"
+
+          if [ "${#ran[@]}" -eq 0 ]; then
+            echo "::warning::None of the commands' tools are installed in the project environment, so only the install ran."
+          fi
+          delimiter="EOF_$(openssl rand -hex 8)"
+          {
+            echo "commands-run<<$delimiter"
+            if [ "${#ran[@]}" -gt 0 ]; then printf '%s\n' "${ran[@]}"; fi
+            echo "$delimiter"
+          } >> "$GITHUB_OUTPUT"
+
+          summary="none"
+          if [ "${#ran[@]}" -gt 0 ]; then
+            summary="$(printf '%s<br>' "${ran[@]}")"
+          fi
+          {
+            echo "### python-ci"
+            echo
+            echo "| Python | uv | Commands run |"
+            echo "| --- | --- | --- |"
+            echo "| $PYTHON_VERSION | $(uv --version | cut -d' ' -f2) | ${summary%<br>} |"
+          } >> "$GITHUB_STEP_SUMMARY"

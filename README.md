@@ -83,6 +83,7 @@ Copy a ready-made caller from [examples/callers/](examples/callers/). For ref ch
 | Workflow | Purpose | Example caller |
 | --- | --- | --- |
 | [node-ci](.github/workflows/node-ci.yml) | Node and TypeScript CI: detects pnpm (needs `packageManager` in package.json) or npm from the lockfile and Node from `.nvmrc` or `.node-version`, does a frozen install, then runs the `lint`, `typecheck`, `test` and `build` scripts that exist. Tested on `ubuntu-latest`. Callers grant `contents: read`. | [node-ci.yml](examples/callers/node-ci.yml) |
+| [python-ci](.github/workflows/python-ci.yml) | Python CI with uv: Python from the input, `.python-version` or `requires-python`, `uv sync --locked` (`uv.lock` in the working directory or a parent, for uv workspaces), then runs `ruff check`, `ruff format --check`, `pyright` and `pytest` for whichever tools are installed in the project environment. Tested on `ubuntu-latest`. Callers grant `contents: read`. | [python-ci.yml](examples/callers/python-ci.yml) |
 
 ### Actions
 
