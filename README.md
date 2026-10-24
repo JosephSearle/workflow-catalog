@@ -91,6 +91,7 @@ Copy a ready-made caller from [examples/callers/](examples/callers/). For ref ch
 | Action | Purpose |
 | --- | --- |
 | [setup-node-deps](actions/setup-node-deps/) | Sets up pnpm or npm and Node (detected the same way as node-ci) with dependency caching, then does a frozen install where the lockfile is. Use it for Node jobs that node-ci doesn't cover, such as deploys. Tested on `ubuntu-latest`. |
+| [setup-python-deps](actions/setup-python-deps/) | Sets up uv with caching and Python (resolved the same way as python-ci), then runs `uv sync --locked`, with `uv.lock` in the working directory or a parent. Use it for Python jobs that python-ci doesn't cover. Tested on `ubuntu-latest`. |
 
 Actions are independent building blocks. The workflows above are built from them, and your own workflows can use them directly. See [actions/README.md](actions/README.md).
 

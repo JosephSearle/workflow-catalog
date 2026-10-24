@@ -26,9 +26,17 @@ jobs:
     with:
       working-directory: tests/fixtures/python-ci-bare
 
+  run-workspace:
+    name: Run python-ci (uv workspace member)
+    uses: ./.github/workflows/python-ci.yml
+    permissions:
+      contents: read
+    with:
+      working-directory: tests/fixtures/python-ci-workspace/packages/app
+
   assert:
     name: Assert python-ci outputs
-    needs: [run-main, run-bare]
+    needs: [run-main, run-bare, run-workspace]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
@@ -39,6 +47,8 @@ jobs:
           MAIN_COMMANDS: ${{ needs.run-main.outputs.commands-run }}
           BARE_PYTHON: ${{ needs.run-bare.outputs.python-version }}
           BARE_COMMANDS: ${{ needs.run-bare.outputs.commands-run }}
+          WS_PYTHON: ${{ needs.run-workspace.outputs.python-version }}
+          WS_COMMANDS: ${{ needs.run-workspace.outputs.commands-run }}
         run: |
           fail=0
           check() {
@@ -63,6 +73,14 @@ jobs:
           case "$BARE_PYTHON" in
             3.*) if [ "$minor" -lt 13 ]; then echo "::error::bare python-version: expected >=3.13 from requires-python, got '$BARE_PYTHON'."; fail=1; fi ;;
             *) echo "::error::bare python-version: expected 3.x.y, got '$BARE_PYTHON'."; fail=1 ;;
+          esac
+
+          # uv.lock is at the workspace root. The member has no dev tools, so
+          # the install must succeed and every command is skipped.
+          check "workspace commands-run" "$WS_COMMANDS" ""
+          case "$WS_PYTHON" in
+            3.*) ;;
+            *) echo "::error::workspace python-version: expected 3.x.y, got '$WS_PYTHON'."; fail=1 ;;
           esac
 
           exit "$fail"
