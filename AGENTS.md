@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this repository.
 
 ## What this repo is
 
-A catalog of reusable GitHub Actions workflows and composite actions that JosephSearle's other repos call by Git ref. It's YAML and shell only: there's no build step. The whole repo is released under a single semver version. The public workflows are `node-ci` and `python-ci`, released from `v1.0.0`. There are no actions yet.
+A catalog of reusable GitHub Actions workflows and composite actions that JosephSearle's other repos call by Git ref. It's YAML and shell only: there's no build step. The whole repo is released under a single semver version. The public workflows are `node-ci` and `python-ci` (released in `v1.0.0`) and `shell-lint`. There are no actions yet.
 
 ## Commands
 

@@ -1,0 +1,3 @@
+#!/usr/bin/env python3
+# Not a shell script: shell-lint must not pass it to shellcheck.
+print("report")

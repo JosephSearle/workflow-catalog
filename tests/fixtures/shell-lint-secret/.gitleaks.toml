@@ -1,0 +1,11 @@
+# Only the shell-lint-secret test passes this config. The token in
+# planted.txt matches no default gitleaks rule and no GitHub push-protection
+# pattern, so full-history scans with the default rules stay clean.
+[extend]
+useDefault = true
+
+[[rules]]
+id = "catalog-fake-secret"
+description = "Planted test token for the shell-lint secret-scan fixture"
+regex = '''CATALOG_FAKE_SECRET_[A-Z0-9]{24}'''
+keywords = ["catalog_fake_secret_"]

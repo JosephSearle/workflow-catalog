@@ -1,0 +1,31 @@
+# Copy to .github/workflows/ in a consumer repo.
+# Replace <sha> # vX.Y.Z with a release's full commit SHA and tag. Dependabot keeps it current.
+name: shell-lint
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  shell-lint:
+    uses: JosephSearle/workflow-catalog/.github/workflows/shell-lint.yml@<sha> # vX.Y.Z
+    permissions:
+      contents: read
+    # Defaults shown. shellcheck checks *.sh, *.bash and shebang-detected scripts under
+    # working-directory, follows `source` and honours .shellcheckrc. gitleaks scans the full Git history and
+    # honours .gitleaks.toml and .gitleaksignore at the repo root. pre-commit "auto" runs
+    # .pre-commit-config.yaml from working-directory when it exists, with shellcheck and
+    # gitleaks on PATH for `language: system` hooks.
+    # with:
+    #   working-directory: .
+    #   pre-commit: auto  # auto | true | false
+    #   gitleaks-config: ""  # e.g. .github/gitleaks.toml, relative to the repo root
+    #   runs-on: ubuntu-latest  # the only runner the catalog tests; Linux x64 and arm64 work
+    #   timeout-minutes: 10

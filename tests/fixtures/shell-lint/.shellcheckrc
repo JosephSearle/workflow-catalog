@@ -1,0 +1,3 @@
+# Proves shell-lint honours the caller's .shellcheckrc: scripts/build.sh has an
+# unused variable (SC2034) that would otherwise fail.
+disable=SC2034
