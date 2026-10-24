@@ -25,7 +25,7 @@ Start from the matching file in [examples/callers/](../examples/callers/).
 | Ref | Example | When |
 | --- | --- | --- |
 | Full SHA + version comment | `@3f1c…a9 # v1.2.3` | Default. Immutable, and Dependabot bumps it with a PR. |
-| Major tag | `@v1` | Low-risk repos that should get fixes automatically. |
+| Major tag | `@v1` | From 1.0.0 only, for low-risk repos that should get fixes automatically. There's no `v0`, because before 1.0.0 breaking changes ship as minor releases. |
 | Branch | `@main` | Never. Unreleased and can break at any time. |
 
 `uses:` can't contain expressions, so the ref has to be literal.

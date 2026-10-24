@@ -15,7 +15,7 @@ Inside a catalog workflow, after checking out the catalog to `.catalog`:
 From any other repo:
 
 ```yaml
-- uses: JosephSearle/workflow-catalog/actions/__NAME__@v1
+- uses: JosephSearle/workflow-catalog/actions/__NAME__@<sha> # vX.Y.Z
 ```
 
 ## Inputs

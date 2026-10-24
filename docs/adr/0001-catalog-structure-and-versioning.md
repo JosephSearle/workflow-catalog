@@ -20,8 +20,8 @@ Constraints:
 2. **Naming separates public from internal.** Unprefixed `.github/workflows/*.yml` files are public API. `_`-prefixed files are catalog-internal.
 3. **Workflows check out the catalog at `job.workflow_sha`** to use catalog actions, so workflows and actions are always the same version.
 4. **Composite actions by default.** TypeScript tooling is added when the first TS action needs it.
-5. **Testing:** static checks on every PR, plus one test workflow per component, run only when that component changed. A single `ci-ok` gate job is the only required check.
-6. **Versioning:** the whole repo has one semver version, released by release-please from Conventional Commits. `vX.Y.Z` releases are immutable, and a floating `vX` tag is moved by the release app. Consumers pin by SHA (recommended) or `vX`.
+5. **Testing:** static checks on every PR, plus one test workflow per component, run only when that component changed. A single `ci-ok` gate job covers them, and a separate `PR title` check is the only other required check.
+6. **Versioning:** the whole repo has one semver version, released by release-please from Conventional Commits. `vX.Y.Z` releases are immutable, and from 1.0.0 a floating `vX` tag is moved by the release app. Consumers pin by SHA (recommended) or, from 1.0.0, `vX`.
 7. **Callers are distributed as copy-paste examples** in `examples/callers/` instead of workflow templates.
 
 ## Consequences

@@ -3,7 +3,7 @@
 # Requires a GitHub App installed on this repo with contents:write and pull-requests:write:
 #   vars.RELEASE_APP_CLIENT_ID     App client ID
 #   secrets.RELEASE_APP_PRIVATE_KEY App private key
-# A GITHUB_TOKEN-created PR does not trigger `_ci`, so the release PR could never pass `ci-ok`.
+# A GITHUB_TOKEN-created PR does not trigger `_ci`, so the release PR could never pass its required checks.
 name: _release
 
 on:
@@ -50,7 +50,8 @@ jobs:
   move-major-tag:
     name: Move floating major tag
     needs: release-please
-    if: needs.release-please.outputs.release_created == 'true'
+    # No v0: before 1.0.0, breaking changes ship as minor releases.
+    if: needs.release-please.outputs.release_created == 'true' && needs.release-please.outputs.major != '0'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
@@ -68,9 +69,13 @@ jobs:
           MAJOR_TAG: v${{ needs.release-please.outputs.major }}
           SHA: ${{ needs.release-please.outputs.sha }}
         run: |
-          if gh api "repos/$GITHUB_REPOSITORY/git/refs/tags/$MAJOR_TAG" --silent 2>/dev/null; then
+          # Singular `ref` matches exactly; plural `refs` would match v0 against v0.1.0.
+          if err=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$MAJOR_TAG" --silent 2>&1); then
             gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$MAJOR_TAG" -f sha="$SHA" -F force=true --silent
-          else
+          elif [[ "$err" == *"HTTP 404"* ]]; then
             gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$MAJOR_TAG" -f sha="$SHA" --silent
+          else
+            echo "::error::Couldn't check whether $MAJOR_TAG exists: $err"
+            exit 1
           fi
           echo "Moved $MAJOR_TAG to $SHA"

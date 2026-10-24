@@ -13,6 +13,10 @@ Enforced by `_lint.yml` (zizmor, actionlint) and review:
 - No `pull_request_target`.
 - Explicit `secrets:` contracts, no `secrets: inherit`.
 
+## Claude Code config
+
+`.claude/settings.json` registers a hook that runs `.claude/hooks/lint-edited.sh` on contributors' machines whenever Claude Code edits a file, and it pre-approves some `make` and read-only `gh` commands. Review changes to `.claude/` as carefully as changes to workflows. Keep hooks local and read-only: no network calls beyond the pinned linters, and no writes outside the repo.
+
 ## Repository settings
 
 Apply these once in **Settings**.
@@ -29,7 +33,7 @@ Apply these once in **Settings**.
 - Restrict deletions. Block force pushes.
 - Require linear history.
 - Require a pull request before merging. Required approvals: 0 (solo maintainer). Dismiss stale approvals on push.
-- Require status checks to pass: `ci-ok`. Require branches to be up to date.
+- Require status checks to pass: `ci-ok` and `PR title`. Require branches to be up to date.
 
 **Release tag ruleset** (target: tags matching `v*`)
 
@@ -55,7 +59,7 @@ The bypass lets `_release.yml` create `vX.Y.Z` and move `vX`. Nobody else can cr
 - Dependabot alerts and security updates: on.
 - Secret scanning and push protection: on.
 - Private vulnerability reporting: on (used by [SECURITY.md](../SECURITY.md)).
-- Code scanning: zizmor uploads SARIF from `_lint.yml`. No default CodeQL setup needed for YAML-only content.
+- Code scanning: `_ci.yml`'s `zizmor-sarif` job uploads SARIF on pushes to `main`, and is the only job with `security-events: write`. On PRs and in the merge queue, `_lint.yml`'s zizmor job fails on findings instead. No default CodeQL setup needed for YAML-only content.
 
 ## Apply with `gh`
 

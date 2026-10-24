@@ -4,6 +4,7 @@ updates:
     directories:
       - /
       - /actions/*
+      # templates/ isn't scannable. `make new-*` syncs scaffolded pins to these; `make sync-template-pins` tidies templates/.
     schedule:
       interval: weekly
     commit-message:

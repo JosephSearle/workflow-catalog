@@ -1,5 +1,5 @@
 # Copy to .github/workflows/ in a consumer repo.
-# Pin to a full SHA (Dependabot keeps it current), or use @v1 for convenience.
+# Replace <sha> # vX.Y.Z with a release's full commit SHA and tag. Dependabot keeps it current.
 name: __NAME__
 
 on:
@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   __NAME__:
-    uses: JosephSearle/workflow-catalog/.github/workflows/__NAME__.yml@v0
+    uses: JosephSearle/workflow-catalog/.github/workflows/__NAME__.yml@<sha> # vX.Y.Z
     permissions:
       contents: read
     # with:

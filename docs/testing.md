@@ -1,6 +1,6 @@
 # Testing
 
-Every PR runs `_ci.yml`. Its final job, `ci-ok`, is the only required status check.
+Every PR runs `_ci.yml`. Its final job, `ci-ok`, is the required status check for everything except the PR title, which `_pr-title.yml` checks as `PR title`.
 
 ## Layers
 
@@ -8,14 +8,17 @@ Every PR runs `_ci.yml`. Its final job, `ci-ok`, is the only required status che
 | --- | --- | --- |
 | Static | `_lint.yml` / `make lint` | actionlint (with shellcheck), yamllint, schema checks for `action.yml`/workflows/Dependabot, zizmor security audit |
 | Action | `_test-action-<name>.yml` | Runs `./actions/<name>` with real inputs and asserts outputs and side effects |
-| Workflow | `_test-wf-<name>.yml` | Calls `./.github/workflows/<name>.yml` against `tests/fixtures/` and asserts outputs |
+| Workflow | `_test-wf-<name>.yml` | Calls `./.github/workflows/<name>.yml` against `tests/fixtures/<name>/` (and `<name>-failing/`) and asserts outputs |
 
-## Why one required check
+## Why one gate job
 
-A required check that path filters skip stays "pending" forever and blocks the merge. `_ci.yml` always runs. It works out which components changed (`dorny/paths-filter`), calls only their test workflows, and `ci-ok` passes when every job succeeded or was skipped.
+A required check that path filters skip stays "pending" forever and blocks the merge. `_ci.yml` always runs, and `ci-ok` passes when every job succeeded or was skipped. Once components are registered, its `changes` job works out which ones changed (`dorny/paths-filter`) so only their test workflows run. Until the first component, `changes` is commented out and `ci-ok` needs only `lint`; see step 0 below.
+
+`PR title` lives in its own workflow because it has to rerun when the PR is edited. In `_ci.yml`, every description edit would rerun the whole graph.
 
 ## Register a component in `_ci.yml`
 
+0. First component only: uncomment the `changes` job and add it to `ci-ok.needs`.
 1. Add a filter covering the component, its test workflow and its fixtures:
    ```yaml
    action-setup-node-cached:

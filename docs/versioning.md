@@ -13,7 +13,7 @@
 1. PRs are squash-merged with Conventional Commit titles.
 2. `_release.yml` runs release-please on every push to `main`. It keeps one release PR open with the next version and changelog.
 3. Merging the release PR tags `vX.Y.Z`, publishes a GitHub release and updates `CHANGELOG.md`.
-4. The same workflow moves `vX` to the release commit.
+4. From `v1.0.0` on, the same workflow moves `vX` to the release commit. There's no `v0` tag, because before 1.0.0 breaking changes ship as minor releases.
 
 `vX.Y.Z` releases are immutable once published. `vX` is a plain tag that only the release app can move.
 

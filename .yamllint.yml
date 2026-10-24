@@ -8,7 +8,6 @@ rules:
   document-start: disable
   line-length:
     max: 160
-    level: warning
   truthy:
     # `on:` is a GitHub Actions keyword, not a boolean.
     allowed-values: ["true", "false"]
