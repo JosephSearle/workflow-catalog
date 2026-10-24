@@ -2,7 +2,7 @@
 
 Scans the full Git history for secrets with [gitleaks](https://github.com/gitleaks/gitleaks). gitleaks is a pinned release binary (currently 8.30.1), checked against a sha256 hash before use. It honours `.gitleaks.toml` and `.gitleaksignore` at the repo root, or a `config` path.
 
-The action needs a full-history checkout (`fetch-depth: 0`). On a shallow checkout it fails with `result: error`, because otherwise it would only scan the fetched commits. Afterwards, `gitleaks` is on `PATH` for later steps, such as pre-commit hooks.
+The action needs a full-history checkout (`fetch-depth: 0`). On a shallow checkout it fails with `result: error`, because otherwise it would only scan the fetched commits. Afterwards, `gitleaks` is on `PATH` for later steps, such as pre-commit hooks, even when the scan itself couldn't run (e.g. a missing config).
 
 The [shell-lint](../../.github/workflows/shell-lint.yml) workflow is built on this action.
 
@@ -40,6 +40,7 @@ To adopt it on a repo that still has old secrets in its history, set `fail-on-fi
 | Name | Description |
 | --- | --- |
 | `result` | `success` (no secrets), `failure` (secrets found) or `error` (shallow checkout, missing config, or gitleaks couldn't be installed or run). |
+| `gitleaks-version` | gitleaks version that was installed, e.g. `8.30.1`. Empty if it couldn't be installed. |
 
 ## Supported runners
 

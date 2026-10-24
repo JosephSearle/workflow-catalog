@@ -35,6 +35,18 @@ case "$FAIL_ON_FINDINGS" in
   *) error "fail-on-findings must be 'true' or 'false', got '$FAIL_ON_FINDINGS'." ;;
 esac
 
+# Install before checking the repo and config, so gitleaks is on PATH for
+# later steps (e.g. pre-commit hooks) even when the scan can't run.
+file="gitleaks_${GITLEAKS_VERSION}_linux_$arch.tar.gz"
+bin="$RUNNER_TEMP/scan-secrets-bin"
+mkdir -p "$bin"
+curl -fsSL --retry 3 -o "$RUNNER_TEMP/$file" "https://github.com/gitleaks/gitleaks/releases/download/v$GITLEAKS_VERSION/$file"
+(cd "$RUNNER_TEMP" && printf '%s  %s\n' "$sha" "$file" | sha256sum -c -)
+tar -xzf "$RUNNER_TEMP/$file" -C "$bin" gitleaks
+echo "$bin" >> "$GITHUB_PATH"
+"$bin/gitleaks" version
+echo "gitleaks-version=$GITLEAKS_VERSION" >> "$GITHUB_OUTPUT"
+
 # A shallow clone would quietly scan only the fetched commits.
 if ! shallow="$(git rev-parse --is-shallow-repository 2>/dev/null)"; then
   error "'$GITHUB_WORKSPACE' isn't a Git repository. Check out the repo first."
@@ -50,15 +62,6 @@ if [ -n "$CONFIG" ]; then
   fi
   args+=(--config "$CONFIG")
 fi
-
-file="gitleaks_${GITLEAKS_VERSION}_linux_$arch.tar.gz"
-bin="$RUNNER_TEMP/scan-secrets-bin"
-mkdir -p "$bin"
-curl -fsSL --retry 3 -o "$RUNNER_TEMP/$file" "https://github.com/gitleaks/gitleaks/releases/download/v$GITLEAKS_VERSION/$file"
-(cd "$RUNNER_TEMP" && printf '%s  %s\n' "$sha" "$file" | sha256sum -c -)
-tar -xzf "$RUNNER_TEMP/$file" -C "$bin" gitleaks
-echo "$bin" >> "$GITHUB_PATH"
-"$bin/gitleaks" version
 
 # Leaks exit 2, so they can be told apart from gitleaks errors (exit 1).
 status=0

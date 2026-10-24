@@ -242,6 +242,7 @@ jobs:
           SHELLCHECK_COUNT: ${{ steps.shellcheck.outputs.count }}
           SHELLCHECK_STATUS: ${{ steps.shellcheck.outputs.status }}
           GITLEAKS_RESULT: ${{ steps.gitleaks.outputs.result }}
+          GITLEAKS_VERSION: ${{ steps.gitleaks.outputs.gitleaks-version }}
           PRE_COMMIT_OUTCOME: ${{ steps.pre-commit.outcome }}
           FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
         run: |
@@ -265,7 +266,7 @@ jobs:
             echo "| Check | Result |"
             echo "| --- | --- |"
             echo "| shellcheck ($SHELLCHECK_VERSION, ${SHELLCHECK_COUNT:-0} files) | $shellcheck_result |"
-            echo "| gitleaks (full history) | $gitleaks_result |"
+            echo "| gitleaks (v${GITLEAKS_VERSION:-?}, full history) | $gitleaks_result |"
             echo "| pre-commit | $PRE_COMMIT_OUTCOME |"
           } >> "$GITHUB_STEP_SUMMARY"
 

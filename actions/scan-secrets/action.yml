@@ -24,6 +24,9 @@ outputs:
       "success" (no secrets), "failure" (secrets found) or "error" (shallow checkout, bad config,
       or gitleaks couldn't be installed or run).
     value: ${{ steps.scan.outputs.result }}
+  gitleaks-version:
+    description: gitleaks version that was installed, e.g. "8.30.1". Empty if it couldn't be installed.
+    value: ${{ steps.scan.outputs.gitleaks-version }}
 
 runs:
   using: composite
