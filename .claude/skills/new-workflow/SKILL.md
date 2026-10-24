@@ -45,7 +45,7 @@ Ask which catalog actions it uses and which third-party actions it needs. Pin an
 Follow "Register a component in `_ci.yml`" in docs/testing.md. Name the filter `wf-<name>` and the job `test-wf-<name>`.
 
 - The filter covers the workflow, its test and both fixture directories, plus `actions/<x>/**` for every catalog action it uses.
-- For a failing fixture, also add `test-wf-<name>-failing` and `test-wf-<name>-failing-assert`, and put only the assert job in `ci-ok.needs`.
+- For a failing fixture, also add `test-wf-<name>-failing` and `test-wf-<name>-failing-assert`, and put only the assert job in `ci-ok.needs`. Give both `github.event_name != 'push'` in their `if:`, like the existing ones.
 
 ## 6. Docs
 

@@ -36,7 +36,7 @@ Tool versions are pinned in four places that must stay in sync: the `Makefile` v
 2. Expose the filter under `changes.outputs`.
 3. Add a `test-…` job that calls the test workflow when the filter matched.
 4. Add that job to `ci-ok.needs`.
-5. A workflow's failing fixture runs from `_ci.yml` as `test-wf-<name>-failing` (not in `ci-ok.needs`) plus `test-wf-<name>-failing-assert` (in `ci-ok.needs`), because a job calling a reusable workflow can't set `continue-on-error`.
+5. A workflow's failing fixture runs from `_ci.yml` as `test-wf-<name>-failing` (not in `ci-ok.needs`) plus `test-wf-<name>-failing-assert` (in `ci-ok.needs`), because a job calling a reusable workflow can't set `continue-on-error`. Both skip on push (`github.event_name != 'push'`), so the expected red job doesn't mark main's run as failed.
 Then add a row to the Catalog table in `README.md`. List actions in `actions/README.md` as well.
 
 **Workflows using catalog actions.** `uses: ./actions/x` inside a reusable workflow resolves against the *caller's* checkout. To use a catalog action, check out `${{ job.workflow_repository }}` at `${{ job.workflow_sha }}` into `.catalog` and then use `./.catalog/actions/<name>`. Don't delete `.catalog` during the job, because post steps of the actions it holds reload it at job end. Exclude it from git instead (see `docs/authoring-workflows.md`). Actions must not call other catalog actions; compose them in workflows instead. Actions are independent building blocks: create one for a self-contained unit with real logic that a consumer repo could use on its own, not a wrapper around a single third-party action.
