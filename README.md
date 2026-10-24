@@ -90,9 +90,9 @@ Copy a ready-made caller from [examples/callers/](examples/callers/). For ref ch
 
 | Action | Purpose |
 | --- | --- |
-| _none yet_ | |
+| [setup-node-deps](actions/setup-node-deps/) | Sets up pnpm or npm and Node (detected the same way as node-ci) with dependency caching, then does a frozen install where the lockfile is. Use it for Node jobs that node-ci doesn't cover, such as deploys. Tested on `ubuntu-latest`. |
 
-Actions are building blocks for the workflows above. See [actions/README.md](actions/README.md).
+Actions are independent building blocks. The workflows above are built from them, and your own workflows can use them directly. See [actions/README.md](actions/README.md).
 
 ## Versioning
 

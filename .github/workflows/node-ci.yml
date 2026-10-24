@@ -55,8 +55,8 @@ jobs:
     permissions:
       contents: read
     outputs:
-      node-version: ${{ steps.node.outputs.version }}
-      package-manager: ${{ steps.detect.outputs.package-manager }}
+      node-version: ${{ steps.setup.outputs.node-version }}
+      package-manager: ${{ steps.setup.outputs.package-manager }}
       scripts-run: ${{ steps.run.outputs.scripts-run }}
     defaults:
       run:
@@ -68,125 +68,35 @@ jobs:
         with:
           persist-credentials: false
 
-      # Setup actions take paths relative to the repo root, so detect emits
-      # root-relative paths alongside the package manager and Node version.
-      - id: detect
-        name: Detect package manager and Node version
-        env:
-          WORKING_DIRECTORY: ${{ inputs.working-directory }}
-          NODE_VERSION: ${{ inputs.node-version }}
-        run: |
-          dir="${WORKING_DIRECTORY%/}"
-
-          # Walk up from working-directory to the repo root and take the first
-          # lockfile, so workspace members use the workspace root's lockfile.
-          root="$(cd "$GITHUB_WORKSPACE" && pwd -P)"
-          search="$(pwd -P)"
-          pm=""
-          while :; do
-            if [ -f "$search/pnpm-lock.yaml" ]; then
-              pm=pnpm lockfile=pnpm-lock.yaml
-              break
-            elif [ -f "$search/package-lock.json" ]; then
-              pm=npm lockfile=package-lock.json
-              break
-            fi
-            if [ "$search" = "$root" ] || [ "$search" = / ]; then
-              break
-            fi
-            search="$(dirname "$search")"
-          done
-          if [ -z "$pm" ]; then
-            echo "::error::No pnpm-lock.yaml or package-lock.json in '$WORKING_DIRECTORY' or any parent up to the repo root. Commit a lockfile."
-            exit 1
-          fi
-          # Root-relative directory holding the lockfile, "." at the repo root.
-          lock_dir="${search#"$root"}"
-          lock_dir="${lock_dir#/}"
-          lock_dir="${lock_dir:-.}"
-
-          # pnpm/action-setup gets no version input, so it needs packageManager.
-          if [ "$pm" = pnpm ] && ! grep -Eq '"packageManager"[[:space:]]*:[[:space:]]*"pnpm@' "$search/package.json"; then
-            echo "::error::pnpm-lock.yaml found in '$lock_dir', but its package.json has no \"packageManager\": \"pnpm@<version>\" field. Add one."
-            exit 1
-          fi
-
-          # A lockfile from a parent only counts if that parent is a workspace
-          # root. Otherwise the package's own dependencies would never install.
-          if [ "$search" != "$(pwd -P)" ]; then
-            not_root=""
-            if [ "$pm" = pnpm ] && [ ! -f "$search/pnpm-workspace.yaml" ]; then
-              not_root="no pnpm-workspace.yaml"
-            elif [ "$pm" = npm ] && ! grep -Eq '"workspaces"[[:space:]]*:' "$search/package.json"; then
-              not_root="no \"workspaces\" in its package.json"
-            fi
-            if [ -n "$not_root" ]; then
-              echo "::error::No lockfile in '$WORKING_DIRECTORY', and '$lock_dir/$lockfile' isn't a workspace root ($not_root). Commit a lockfile."
-              exit 1
-            fi
-            echo "::notice::Using the workspace lockfile $lock_dir/$lockfile."
-          fi
-
-          # Look in working-directory, then the workspace root, then the repo root.
-          version="$NODE_VERSION" version_file="" source="node-version input"
-          if [ -z "$version" ]; then
-            for candidate in "$dir/.nvmrc" "$dir/.node-version" "$lock_dir/.nvmrc" "$lock_dir/.node-version" .nvmrc .node-version; do
-              if [ -f "$GITHUB_WORKSPACE/$candidate" ]; then
-                version_file="$candidate" source="$candidate"
-                break
-              fi
-            done
-            if [ -z "$version_file" ]; then
-              version="lts/*" source="default (no .nvmrc or .node-version found)"
-            fi
-          fi
-          echo "::notice::Node version from $source."
-
-          {
-            echo "package-manager=$pm"
-            echo "lock-dir=$lock_dir"
-            echo "lockfile=$lock_dir/$lockfile"
-            echo "package-json=$lock_dir/package.json"
-            echo "node-version=$version"
-            echo "node-version-file=$version_file"
-          } >> "$GITHUB_OUTPUT"
-
-      # Reads the pnpm version from package.json's packageManager field.
-      - name: Set up pnpm
-        if: steps.detect.outputs.package-manager == 'pnpm'
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      # Check out the catalog at the exact commit of this workflow so that
+      # catalog actions always match the workflow's version.
+      - name: Check out catalog
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          package_json_file: ${{ steps.detect.outputs.package-json }}
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .catalog
+          sparse-checkout: /actions/
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
 
-      - name: Set up Node
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - id: setup
+        name: Set up Node and install dependencies
+        uses: ./.catalog/actions/setup-node-deps
         with:
-          node-version: ${{ steps.detect.outputs.node-version }}
-          node-version-file: ${{ steps.detect.outputs.node-version-file }}
-          cache: ${{ steps.detect.outputs.package-manager }}
-          cache-dependency-path: ${{ steps.detect.outputs.lockfile }}
+          working-directory: ${{ inputs.working-directory }}
+          node-version: ${{ inputs.node-version }}
 
-      - id: node
-        name: Record Node version
-        run: echo "version=$(node --version)" >> "$GITHUB_OUTPUT"
-
-      # Install at the workspace root, where the lockfile is. Scripts still run
-      # in working-directory.
-      - name: Install dependencies
-        working-directory: ${{ steps.detect.outputs.lock-dir }}
-        env:
-          PACKAGE_MANAGER: ${{ steps.detect.outputs.package-manager }}
-        run: |
-          if [ "$PACKAGE_MANAGER" = pnpm ]; then
-            pnpm install --frozen-lockfile
-          else
-            npm ci
-          fi
+      # .catalog must stay until the job ends: the action's post steps (cache
+      # save) reload it from there. Hide it from git and gitignore-aware tools.
+      - name: Exclude catalog checkout from git
+        working-directory: .
+        run: echo '/.catalog/' >> .git/info/exclude
 
       - id: run
         name: Run scripts
         env:
-          PACKAGE_MANAGER: ${{ steps.detect.outputs.package-manager }}
+          PACKAGE_MANAGER: ${{ steps.setup.outputs.package-manager }}
           SCRIPTS: ${{ inputs.scripts }}
         run: |
           # Split SCRIPTS on whitespace without glob expansion.

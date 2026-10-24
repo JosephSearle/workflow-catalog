@@ -32,6 +32,7 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
+      action-setup-node-deps: ${{ steps.filter.outputs.action-setup-node-deps }}
       wf-node-ci: ${{ steps.filter.outputs.wf-node-ci }}
       wf-python-ci: ${{ steps.filter.outputs.wf-python-ci }}
       wf-shell-lint: ${{ steps.filter.outputs.wf-shell-lint }}
@@ -45,8 +46,17 @@ jobs:
         with:
           # Each test filter includes its own test workflow and fixtures.
           filters: |
+            # Reuses the node-ci fixtures.
+            action-setup-node-deps:
+              - 'actions/setup-node-deps/**'
+              - '.github/workflows/_test-action-setup-node-deps.yml'
+              - 'tests/fixtures/node-ci/**'
+              - 'tests/fixtures/node-ci-npm/**'
+              - 'tests/fixtures/node-ci-workspace/**'
+              - 'tests/fixtures/node-ci-npm-workspace/**'
             wf-node-ci:
               - '.github/workflows/node-ci.yml'
+              - 'actions/setup-node-deps/**'
               - '.github/workflows/_test-wf-node-ci.yml'
               - 'tests/fixtures/node-ci/**'
               - 'tests/fixtures/node-ci-npm/**'
@@ -93,6 +103,14 @@ jobs:
         with:
           version: 1.31.1
           advanced-security: true
+
+  test-action-setup-node-deps:
+    name: Test action setup-node-deps
+    needs: changes
+    if: needs.changes.outputs.action-setup-node-deps == 'true'
+    uses: ./.github/workflows/_test-action-setup-node-deps.yml
+    permissions:
+      contents: read
 
   test-wf-node-ci:
     name: Test workflow node-ci
@@ -195,6 +213,7 @@ jobs:
     needs:
       - changes
       - lint
+      - test-action-setup-node-deps
       - test-wf-node-ci
       - test-wf-node-ci-failing-assert
       - test-wf-python-ci

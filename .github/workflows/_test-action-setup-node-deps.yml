@@ -1,0 +1,135 @@
+# Internal. Tests actions/setup-node-deps against the node-ci fixtures.
+name: _test-action-setup-node-deps
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  test:
+    name: Test setup-node-deps (${{ matrix.case }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        case: [pnpm, npm, pnpm-workspace, npm-workspace, node-version-input]
+        include:
+          - case: pnpm
+            working-directory: tests/fixtures/node-ci
+            node-version: ""
+            package-manager: pnpm
+            lock-dir: tests/fixtures/node-ci
+            # From the fixture's .nvmrc.
+            node-major: "22"
+          - case: npm
+            working-directory: tests/fixtures/node-ci-npm
+            node-version: ""
+            package-manager: npm
+            lock-dir: tests/fixtures/node-ci-npm
+            # No .nvmrc, so lts/*. The assert only checks it's an even major.
+            node-major: lts
+            # The fixture has no dependencies, so npm ci creates no node_modules.
+            node-modules: "false"
+          - case: pnpm-workspace
+            working-directory: tests/fixtures/node-ci-workspace/packages/app
+            node-version: ""
+            package-manager: pnpm
+            lock-dir: tests/fixtures/node-ci-workspace
+            node-major: lts
+          - case: npm-workspace
+            working-directory: tests/fixtures/node-ci-npm-workspace/packages/app
+            node-version: ""
+            package-manager: npm
+            lock-dir: tests/fixtures/node-ci-npm-workspace
+            node-major: lts
+          - case: node-version-input
+            # The input overrides the fixture's .nvmrc (22).
+            working-directory: tests/fixtures/node-ci
+            node-version: "20"
+            package-manager: pnpm
+            lock-dir: tests/fixtures/node-ci
+            node-major: "20"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - id: subject
+        uses: ./actions/setup-node-deps
+        with:
+          working-directory: ${{ matrix.working-directory }}
+          node-version: ${{ matrix.node-version }}
+
+      - name: Assert outputs and side effects
+        shell: bash
+        env:
+          PM: ${{ steps.subject.outputs.package-manager }}
+          LOCK_DIR: ${{ steps.subject.outputs.lock-dir }}
+          NODE: ${{ steps.subject.outputs.node-version }}
+          EXPECTED_PM: ${{ matrix.package-manager }}
+          EXPECTED_LOCK_DIR: ${{ matrix.lock-dir }}
+          EXPECTED_MAJOR: ${{ matrix.node-major }}
+          EXPECTED_NODE_MODULES: ${{ matrix.node-modules }}
+        run: |
+          fail=0
+          check() {
+            if [ "$2" != "$3" ]; then
+              echo "::error::$1: expected '$3', got '$2'."
+              fail=1
+            fi
+          }
+
+          check package-manager "$PM" "$EXPECTED_PM"
+          check lock-dir "$LOCK_DIR" "$EXPECTED_LOCK_DIR"
+          check "node on PATH" "$(node --version)" "$NODE"
+
+          major="${NODE#v}"
+          major="${major%%.*}"
+          if [ "$EXPECTED_MAJOR" = lts ]; then
+            case "$major" in
+              *[!0-9]* | "") echo "::error::node-version: expected vN.x.y, got '$NODE'."; fail=1 ;;
+              *) if [ $((major % 2)) -ne 0 ]; then echo "::error::node-version: expected an LTS (even) major, got '$NODE'."; fail=1; fi ;;
+            esac
+          else
+            check "node major" "$major" "$EXPECTED_MAJOR"
+          fi
+
+          if [ "$EXPECTED_NODE_MODULES" != false ] && [ ! -d "$LOCK_DIR/node_modules" ]; then
+            echo "::error::Expected dependencies installed in $LOCK_DIR/node_modules."
+            fail=1
+          fi
+
+          exit "$fail"
+
+  failure-path:
+    name: Test setup-node-deps fails without a lockfile
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # No lockfile in tests/fixtures or any parent up to the repo root.
+      - id: subject
+        continue-on-error: true
+        uses: ./actions/setup-node-deps
+        with:
+          working-directory: tests/fixtures
+
+      - name: Assert failure
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.subject.outcome }}
+        run: |
+          if [ "$OUTCOME" != failure ]; then
+            echo "::error::Expected setup-node-deps to fail without a lockfile, got '$OUTCOME'."
+            exit 1
+          fi
