@@ -82,7 +82,7 @@ Copy a ready-made caller from [examples/callers/](examples/callers/). For ref ch
 
 | Workflow | Purpose | Example caller |
 | --- | --- | --- |
-| _none yet_ | | |
+| [node-ci](.github/workflows/node-ci.yml) | Node and TypeScript CI: detects pnpm (needs `packageManager` in package.json) or npm from the lockfile and Node from `.nvmrc` or `.node-version`, does a frozen install, then runs the `lint`, `typecheck`, `test` and `build` scripts that exist. Tested on `ubuntu-latest`. Callers grant `contents: read`. | [node-ci.yml](examples/callers/node-ci.yml) |
 
 ### Actions
 

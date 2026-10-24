@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this repository.
 
 ## What this repo is
 
-A catalog of reusable GitHub Actions workflows and composite actions that JosephSearle's other repos call by Git ref. It's YAML and shell only: there's no build step. The whole repo is released under a single semver version. It's still at the scaffold stage, so no public workflows or actions exist yet and `_ci.yml` holds commented-out placeholders for them.
+A catalog of reusable GitHub Actions workflows and composite actions that JosephSearle's other repos call by Git ref. It's YAML and shell only: there's no build step. The whole repo is released under a single semver version. The first public workflow is `node-ci`. There are no actions yet.
 
 ## Commands
 
@@ -32,11 +32,11 @@ Tool versions are pinned in four places that must stay in sync: the `Makefile` v
 **CI gate.** `_ci.yml` always runs, and its final `ci-ok` job is the required status check. It passes when every job in `needs` succeeded or was skipped, which avoids path-filtered required checks staying pending forever. The `PR title` check lives in `_pr-title.yml` so that editing a PR doesn't rerun the whole graph. On push to main, `zizmor-sarif` uploads findings to code scanning and is the only job with `security-events: write`. On PRs, `_lint.yml`'s zizmor job fails on findings instead.
 
 **Registering a component** (not done automatically by `make new-*`). You edit `_ci.yml` by hand:
-0. First component only: uncomment the `changes` job (`dorny/paths-filter`) and add it to `ci-ok.needs`.
 1. Add a filter covering the component, its `_test-*.yml` and its fixtures (`tests/fixtures/<name>/` and `<name>-failing/`). When a workflow uses an action, add the action's path to the workflow's filter too.
 2. Expose the filter under `changes.outputs`.
 3. Add a `test-…` job that calls the test workflow when the filter matched.
 4. Add that job to `ci-ok.needs`.
+5. A workflow's failing fixture runs from `_ci.yml` as `test-wf-<name>-failing` (not in `ci-ok.needs`) plus `test-wf-<name>-failing-assert` (in `ci-ok.needs`), because a job calling a reusable workflow can't set `continue-on-error`.
 Then add a row to the Catalog table in `README.md`. List actions in `actions/README.md` as well.
 
 **Workflows using catalog actions.** `uses: ./actions/x` inside a reusable workflow resolves against the *caller's* checkout. To use a catalog action, check out `${{ job.workflow_repository }}` at `${{ job.workflow_sha }}` into `.catalog` and then use `./.catalog/actions/<name>`. Actions must not call other catalog actions; compose them in workflows instead. Only create an action once two workflows share the steps.

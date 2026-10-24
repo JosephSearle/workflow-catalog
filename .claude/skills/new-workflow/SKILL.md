@@ -37,16 +37,15 @@ Ask which catalog actions it uses and which third-party actions it needs. Pin an
 ## 4. Tests and fixtures
 
 1. Add a minimal passing project under `tests/fixtures/<name>/`.
-2. If the workflow should catch errors, add `tests/fixtures/<name>-failing/` and a second test job that runs the workflow against it and asserts that it failed.
+2. If the workflow should catch errors, add `tests/fixtures/<name>-failing/`. The failing call and its assert job go in `_ci.yml`, not the test workflow (see "Writing good tests" in docs/testing.md).
 3. Replace the template assertions in `_test-wf-<name>.yml` with checks of the real outputs.
 
 ## 5. Register in `_ci.yml`
 
 Follow "Register a component in `_ci.yml`" in docs/testing.md. Name the filter `wf-<name>` and the job `test-wf-<name>`.
 
-- If this is the first component, `changes` is still commented out: uncomment it and add it to `ci-ok.needs` (step 0).
 - The filter covers the workflow, its test and both fixture directories, plus `actions/<x>/**` for every catalog action it uses.
-- Delete the `<name>` placeholder lines in comments once real entries exist.
+- For a failing fixture, also add `test-wf-<name>-failing` and `test-wf-<name>-failing-assert`, and put only the assert job in `ci-ok.needs`.
 
 ## 6. Docs
 

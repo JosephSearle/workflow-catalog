@@ -49,7 +49,7 @@ The bypass lets `_release.yml` create `vX.Y.Z` and move `vX`. Nobody else can cr
 ### Actions → General
 
 - Actions permissions: allow actions created by GitHub, plus actions by Marketplace verified creators, plus this allowlist:
-  `dorny/paths-filter@*, googleapis/release-please-action@*, zizmorcore/zizmor-action@*, astral-sh/setup-uv@*`
+  `dorny/paths-filter@*, googleapis/release-please-action@*, zizmorcore/zizmor-action@*, astral-sh/setup-uv@*, pnpm/action-setup@*`
 - **Require actions to be pinned to a full-length commit SHA.**
 - Workflow permissions: **Read repository contents**. Leave "Allow GitHub Actions to create and approve pull requests" **off**. The release app creates PRs instead.
 - Fork PR workflows: require approval for all outside collaborators.

@@ -2,11 +2,12 @@
 # `PR title` from _pr-title.yml.
 #
 # To register a new component:
-#   0. First component only: uncomment the `changes` job and add it to `ci-ok.needs`.
 #   1. Add a filter under `changes.steps.filter.with.filters`.
 #   2. Expose it under `changes.outputs`.
 #   3. Add a job that calls its `_test-*.yml` when the filter matched.
 #   4. Add that job to `ci-ok.needs`.
+#   For a workflow's failing fixture, add `test-wf-<name>-failing` and
+#   `test-wf-<name>-failing-assert`, and put only the assert job in `ci-ok.needs`.
 name: _ci
 
 on:
@@ -23,35 +24,31 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Uncomment with the first component, and add `changes` to `ci-ok.needs`.
-  # changes:
-  #   name: Detect changes
-  #   runs-on: ubuntu-latest
-  #   timeout-minutes: 5
-  #   permissions:
-  #     contents: read
-  #     pull-requests: read
-  #   outputs:
-  #     action-<name>: ${{ steps.filter.outputs.action-<name> }}
-  #     wf-<name>: ${{ steps.filter.outputs.wf-<name> }}
-  #   steps:
-  #     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-  #       with:
-  #         persist-credentials: false
-  #
-  #     - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
-  #       id: filter
-  #       with:
-  #         # Each test filter includes its own test workflow and fixtures.
-  #         filters: |
-  #           action-<name>:
-  #             - 'actions/<name>/**'
-  #             - '.github/workflows/_test-action-<name>.yml'
-  #           wf-<name>:
-  #             - '.github/workflows/<name>.yml'
-  #             - '.github/workflows/_test-wf-<name>.yml'
-  #             - 'tests/fixtures/<name>/**'
-  #             - 'tests/fixtures/<name>-failing/**'
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      wf-node-ci: ${{ steps.filter.outputs.wf-node-ci }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          # Each test filter includes its own test workflow and fixtures.
+          filters: |
+            wf-node-ci:
+              - '.github/workflows/node-ci.yml'
+              - '.github/workflows/_test-wf-node-ci.yml'
+              - 'tests/fixtures/node-ci/**'
+              - 'tests/fixtures/node-ci-npm/**'
+              - 'tests/fixtures/node-ci-failing/**'
 
   lint:
     name: Lint
@@ -81,19 +78,58 @@ jobs:
           version: 1.31.1
           advanced-security: true
 
-  # test-action-<name>:
-  #   name: Test action <name>
-  #   needs: changes
-  #   if: needs.changes.outputs.action-<name> == 'true'
-  #   uses: ./.github/workflows/_test-action-<name>.yml
-  #   permissions:
-  #     contents: read
+  test-wf-node-ci:
+    name: Test workflow node-ci
+    needs: changes
+    if: needs.changes.outputs.wf-node-ci == 'true'
+    uses: ./.github/workflows/_test-wf-node-ci.yml
+    permissions:
+      contents: read
+
+  # Failure path: this run is expected to fail, so it stays out of
+  # `ci-ok.needs` and the assert job below checks its result instead.
+  test-wf-node-ci-failing:
+    name: Test workflow node-ci (failing fixture, expected to fail)
+    needs: changes
+    if: needs.changes.outputs.wf-node-ci == 'true'
+    uses: ./.github/workflows/node-ci.yml
+    permissions:
+      contents: read
+    with:
+      working-directory: tests/fixtures/node-ci-failing
+
+  test-wf-node-ci-failing-assert:
+    name: Assert node-ci fails on failing fixture
+    needs: [changes, test-wf-node-ci-failing]
+    if: ${{ !cancelled() && needs.changes.outputs.wf-node-ci == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check result
+        env:
+          RESULT: ${{ needs.test-wf-node-ci-failing.result }}
+          PACKAGE_MANAGER: ${{ needs.test-wf-node-ci-failing.outputs.package-manager }}
+          NODE_VERSION: ${{ needs.test-wf-node-ci-failing.outputs.node-version }}
+        run: |
+          if [ "$RESULT" != failure ]; then
+            echo "::error::Expected node-ci to fail on tests/fixtures/node-ci-failing, got '$RESULT'."
+            exit 1
+          fi
+          # Setup outputs prove it got past Node and package-manager setup.
+          if [ "$PACKAGE_MANAGER" != npm ] || [ -z "$NODE_VERSION" ]; then
+            echo "::error::node-ci failed during setup (package-manager '$PACKAGE_MANAGER', node-version '$NODE_VERSION'). Check its setup steps."
+            exit 1
+          fi
 
   ci-ok:
     name: ci-ok
     if: always()
     needs:
+      - changes
       - lint
+      - test-wf-node-ci
+      - test-wf-node-ci-failing-assert
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}

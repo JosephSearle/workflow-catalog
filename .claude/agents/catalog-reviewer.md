@@ -30,7 +30,7 @@ Report the overall bump and the matching Conventional Commit type. If the user g
 - Catalog actions used through the `.catalog` checkout at `job.workflow_sha`, not `./actions/...`.
 
 **Completeness.** For each new or changed component:
-- A `_test-wf-<name>.yml` or `_test-action-<name>.yml` that asserts real outputs and covers a failure path.
+- A `_test-wf-<name>.yml` or `_test-action-<name>.yml` that asserts real outputs. Actions cover a failure path with `continue-on-error`. Workflows cover it with `test-wf-<name>-failing` and `test-wf-<name>-failing-assert` jobs in `_ci.yml`, where only the assert job is in `ci-ok.needs`.
 - For workflows, `tests/fixtures/<name>/`, and `<name>-failing/` where the workflow should catch errors.
 - `_ci.yml`: a `changes` filter covering the component, its test and its fixtures (plus any catalog actions a workflow uses); an entry in `changes.outputs`; a `test-…` job; and the job in `ci-ok.needs`.
 - A README catalog row, `examples/callers/<name>.yml` for workflows, an `actions/README.md` entry for actions.

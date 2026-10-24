@@ -1,0 +1,183 @@
+# Public. Called by consumer repos. The file name is public API: renaming it is a breaking change.
+# Docs: README.md#workflows   Example caller: examples/callers/node-ci.yml
+name: node-ci
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Directory containing package.json and the lockfile, relative to the repo root.
+        type: string
+        required: false
+        default: "."
+      node-version:
+        description: >-
+          Node version spec, e.g. "22" or "lts/*". Empty reads .nvmrc or .node-version from
+          working-directory, then the repo root, then falls back to "lts/*".
+        type: string
+        required: false
+        default: ""
+      scripts:
+        description: Space-separated package.json scripts to run in order. Scripts the package doesn't define are skipped with a notice.
+        type: string
+        required: false
+        default: "lint typecheck test build"
+      runs-on:
+        description: Runner label for the job.
+        type: string
+        required: false
+        default: ubuntu-latest
+      timeout-minutes:
+        description: Job timeout in minutes.
+        type: number
+        required: false
+        default: 15
+    outputs:
+      node-version:
+        description: Node version that ran, e.g. "v22.11.0".
+        value: ${{ jobs.ci.outputs.node-version }}
+      package-manager:
+        description: Package manager detected from the lockfile, "pnpm" or "npm".
+        value: ${{ jobs.ci.outputs.package-manager }}
+      scripts-run:
+        description: Space-separated scripts that ran, in order.
+        value: ${{ jobs.ci.outputs.scripts-run }}
+
+permissions: {}
+
+jobs:
+  ci:
+    name: Node CI
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    permissions:
+      contents: read
+    outputs:
+      node-version: ${{ steps.node.outputs.version }}
+      package-manager: ${{ steps.detect.outputs.package-manager }}
+      scripts-run: ${{ steps.run.outputs.scripts-run }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Check out caller repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Setup actions take paths relative to the repo root, so detect emits
+      # root-relative paths alongside the package manager and Node version.
+      - id: detect
+        name: Detect package manager and Node version
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+          NODE_VERSION: ${{ inputs.node-version }}
+        run: |
+          dir="${WORKING_DIRECTORY%/}"
+          if [ -f pnpm-lock.yaml ]; then
+            pm=pnpm lockfile=pnpm-lock.yaml
+          elif [ -f package-lock.json ]; then
+            pm=npm lockfile=package-lock.json
+          else
+            echo "::error::No pnpm-lock.yaml or package-lock.json in '$WORKING_DIRECTORY'. Commit a lockfile."
+            exit 1
+          fi
+
+          # pnpm/action-setup gets no version input, so it needs packageManager.
+          if [ "$pm" = pnpm ] && ! grep -Eq '"packageManager"[[:space:]]*:[[:space:]]*"pnpm@' package.json; then
+            echo "::error::pnpm-lock.yaml found, but package.json has no \"packageManager\": \"pnpm@<version>\" field. Add one."
+            exit 1
+          fi
+
+          # Look in working-directory first, then the repo root (monorepos).
+          version="$NODE_VERSION" version_file="" source="node-version input"
+          if [ -z "$version" ]; then
+            for candidate in "$dir/.nvmrc" "$dir/.node-version" .nvmrc .node-version; do
+              if [ -f "$GITHUB_WORKSPACE/$candidate" ]; then
+                version_file="$candidate" source="$candidate"
+                break
+              fi
+            done
+            if [ -z "$version_file" ]; then
+              version="lts/*" source="default (no .nvmrc or .node-version found)"
+            fi
+          fi
+          echo "::notice::Node version from $source."
+
+          {
+            echo "package-manager=$pm"
+            echo "lockfile=$dir/$lockfile"
+            echo "package-json=$dir/package.json"
+            echo "node-version=$version"
+            echo "node-version-file=$version_file"
+          } >> "$GITHUB_OUTPUT"
+
+      # Reads the pnpm version from package.json's packageManager field.
+      - name: Set up pnpm
+        if: steps.detect.outputs.package-manager == 'pnpm'
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: ${{ steps.detect.outputs.package-json }}
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ steps.detect.outputs.node-version }}
+          node-version-file: ${{ steps.detect.outputs.node-version-file }}
+          cache: ${{ steps.detect.outputs.package-manager }}
+          cache-dependency-path: ${{ steps.detect.outputs.lockfile }}
+
+      - id: node
+        name: Record Node version
+        run: echo "version=$(node --version)" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        env:
+          PACKAGE_MANAGER: ${{ steps.detect.outputs.package-manager }}
+        run: |
+          if [ "$PACKAGE_MANAGER" = pnpm ]; then
+            pnpm install --frozen-lockfile
+          else
+            npm ci
+          fi
+
+      - id: run
+        name: Run scripts
+        env:
+          PACKAGE_MANAGER: ${{ steps.detect.outputs.package-manager }}
+          SCRIPTS: ${{ inputs.scripts }}
+        run: |
+          # Split SCRIPTS on whitespace without glob expansion.
+          set -f
+          ran=""
+          for script in $SCRIPTS; do
+            # Exit 2 means "not defined". Any other failure is a real error.
+            status=0
+            node -e '
+              const scripts = require("./package.json").scripts || {};
+              process.exit(Object.prototype.hasOwnProperty.call(scripts, process.argv[1]) ? 0 : 2);
+            ' "$script" || status=$?
+            case "$status" in
+              0)
+                echo "::group::$PACKAGE_MANAGER run $script"
+                "$PACKAGE_MANAGER" run "$script"
+                echo "::endgroup::"
+                ran="${ran:+$ran }$script"
+                ;;
+              2) echo "::notice::Skipping '$script': it isn't defined in package.json scripts." ;;
+              *) echo "::error::Couldn't read scripts from package.json (exit $status)."; exit "$status" ;;
+            esac
+          done
+
+          if [ -z "$ran" ]; then
+            echo "::warning::None of the scripts '$SCRIPTS' are defined in package.json, so only the install ran."
+          fi
+          echo "scripts-run=$ran" >> "$GITHUB_OUTPUT"
+          {
+            echo "### node-ci"
+            echo
+            echo "| Package manager | Node | Scripts run |"
+            echo "| --- | --- | --- |"
+            echo "| $PACKAGE_MANAGER | $(node --version) | ${ran:-none} |"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,5 +1,5 @@
 # Public. Called by consumer repos. The file name is public API: renaming it is a breaking change.
-# Docs: README.md#__NAME__   Example caller: examples/callers/__NAME__.yml
+# Docs: README.md#workflows   Example caller: examples/callers/__NAME__.yml
 name: __NAME__
 
 on:

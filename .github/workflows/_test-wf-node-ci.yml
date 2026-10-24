@@ -1,0 +1,71 @@
+# Internal. Tests .github/workflows/node-ci.yml against fixtures.
+# The failing-fixture case lives in _ci.yml, because a job that calls a
+# reusable workflow can't set continue-on-error. See docs/testing.md.
+name: _test-wf-node-ci
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  run-pnpm:
+    name: Run node-ci (pnpm)
+    # Local ref: tests the version in this commit/PR.
+    uses: ./.github/workflows/node-ci.yml
+    permissions:
+      contents: read
+    with:
+      working-directory: tests/fixtures/node-ci
+
+  run-npm:
+    name: Run node-ci (npm)
+    uses: ./.github/workflows/node-ci.yml
+    permissions:
+      contents: read
+    with:
+      working-directory: tests/fixtures/node-ci-npm
+
+  assert:
+    name: Assert node-ci outputs
+    needs: [run-pnpm, run-npm]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check outputs
+        env:
+          PNPM_PM: ${{ needs.run-pnpm.outputs.package-manager }}
+          PNPM_NODE: ${{ needs.run-pnpm.outputs.node-version }}
+          PNPM_SCRIPTS: ${{ needs.run-pnpm.outputs.scripts-run }}
+          NPM_PM: ${{ needs.run-npm.outputs.package-manager }}
+          NPM_NODE: ${{ needs.run-npm.outputs.node-version }}
+          NPM_SCRIPTS: ${{ needs.run-npm.outputs.scripts-run }}
+        run: |
+          fail=0
+          check() {
+            if [ "$2" != "$3" ]; then
+              echo "::error::$1: expected '$3', got '$2'."
+              fail=1
+            fi
+          }
+
+          check "pnpm package-manager" "$PNPM_PM" pnpm
+          # typecheck isn't defined in the fixture, so it must be skipped.
+          check "pnpm scripts-run" "$PNPM_SCRIPTS" "lint test build"
+          case "$PNPM_NODE" in
+            v22.*) ;;
+            *) echo "::error::pnpm node-version: expected v22.x from .nvmrc, got '$PNPM_NODE'."; fail=1 ;;
+          esac
+
+          check "npm package-manager" "$NPM_PM" npm
+          check "npm scripts-run" "$NPM_SCRIPTS" test
+          # No .nvmrc, so it falls back to lts/*, which is always an even major.
+          major="${NPM_NODE#v}"
+          major="${major%%.*}"
+          case "$major" in
+            *[!0-9]* | "") echo "::error::npm node-version: expected vN.x.y, got '$NPM_NODE'."; fail=1 ;;
+            *) if [ $((major % 2)) -ne 0 ]; then echo "::error::npm node-version: expected an LTS (even) major, got '$NPM_NODE'."; fail=1; fi ;;
+          esac
+
+          exit "$fail"

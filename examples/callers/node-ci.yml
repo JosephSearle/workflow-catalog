@@ -1,0 +1,30 @@
+# Copy to .github/workflows/ in a consumer repo.
+# Replace <sha> # vX.Y.Z with a release's full commit SHA and tag. Dependabot keeps it current.
+name: node-ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  node-ci:
+    uses: JosephSearle/workflow-catalog/.github/workflows/node-ci.yml@<sha> # vX.Y.Z
+    permissions:
+      contents: read
+    # Defaults shown. The package manager comes from the lockfile (pnpm-lock.yaml or
+    # package-lock.json). pnpm projects need a "packageManager": "pnpm@x.y.z"
+    # field in package.json. Node comes from .nvmrc or .node-version (working-directory, then
+    # repo root), falling back to lts/*.
+    # with:
+    #   working-directory: .
+    #   node-version: ""
+    #   scripts: lint typecheck test build
+    #   runs-on: ubuntu-latest  # the only runner the catalog tests
+    #   timeout-minutes: 15
