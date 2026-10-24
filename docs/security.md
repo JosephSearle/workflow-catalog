@@ -14,6 +14,15 @@ Enforced by `_lint.yml` (zizmor, actionlint) and review:
 - No `pull_request_target`.
 - Explicit `secrets:` contracts, no `secrets: inherit`.
 
+## Azure sandbox
+
+The `deploy-container-app` live test deploys to a real Azure Container App, the only catalog test that reaches outside GitHub.
+
+- `_ci.yml` grants `id-token: write` to `test-action-deploy-container-app`. Only its `live` job uses it, and that job runs on `main` only (push or manual run).
+- The job runs in the `catalog-sandbox` environment. Its federated credential trusts `repo:JosephSearle/workflow-catalog:environment:catalog-sandbox`, and the environment's custom branch policy allows only `main`. PR runs can't get an Azure token.
+- The service principal holds `Contributor` on the sandbox app and `AcrPush` on its registry, nothing wider. Setup is in [azure-container-apps.md](azure-container-apps.md).
+- `azure/login` is from a Marketplace verified creator (Azure), so the allowlist below doesn't need it.
+
 ## Claude Code config
 
 `.claude/settings.json` registers a hook that runs `.claude/hooks/lint-edited.sh` on contributors' machines whenever Claude Code edits a file, and it pre-approves some `make` and read-only `gh` commands. Review changes to `.claude/` as carefully as changes to workflows. Keep hooks local and read-only: no network calls beyond the pinned linters, and no writes outside the repo.
