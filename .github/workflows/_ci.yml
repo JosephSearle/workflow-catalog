@@ -33,6 +33,7 @@ jobs:
       pull-requests: read
     outputs:
       wf-node-ci: ${{ steps.filter.outputs.wf-node-ci }}
+      wf-python-ci: ${{ steps.filter.outputs.wf-python-ci }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -49,6 +50,12 @@ jobs:
               - 'tests/fixtures/node-ci/**'
               - 'tests/fixtures/node-ci-npm/**'
               - 'tests/fixtures/node-ci-failing/**'
+            wf-python-ci:
+              - '.github/workflows/python-ci.yml'
+              - '.github/workflows/_test-wf-python-ci.yml'
+              - 'tests/fixtures/python-ci/**'
+              - 'tests/fixtures/python-ci-bare/**'
+              - 'tests/fixtures/python-ci-failing/**'
 
   lint:
     name: Lint
@@ -122,6 +129,49 @@ jobs:
             exit 1
           fi
 
+  test-wf-python-ci:
+    name: Test workflow python-ci
+    needs: changes
+    if: needs.changes.outputs.wf-python-ci == 'true'
+    uses: ./.github/workflows/_test-wf-python-ci.yml
+    permissions:
+      contents: read
+
+  # Failure path: this run is expected to fail, so it stays out of
+  # `ci-ok.needs` and the assert job below checks its result instead.
+  test-wf-python-ci-failing:
+    name: Test workflow python-ci (failing fixture, expected to fail)
+    needs: changes
+    if: needs.changes.outputs.wf-python-ci == 'true'
+    uses: ./.github/workflows/python-ci.yml
+    permissions:
+      contents: read
+    with:
+      working-directory: tests/fixtures/python-ci-failing
+
+  test-wf-python-ci-failing-assert:
+    name: Assert python-ci fails on failing fixture
+    needs: [changes, test-wf-python-ci-failing]
+    if: ${{ !cancelled() && needs.changes.outputs.wf-python-ci == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check result
+        env:
+          RESULT: ${{ needs.test-wf-python-ci-failing.result }}
+          PYTHON_VERSION: ${{ needs.test-wf-python-ci-failing.outputs.python-version }}
+        run: |
+          if [ "$RESULT" != failure ]; then
+            echo "::error::Expected python-ci to fail on tests/fixtures/python-ci-failing, got '$RESULT'."
+            exit 1
+          fi
+          # The Python version output proves it got past uv setup and install.
+          if [ -z "$PYTHON_VERSION" ]; then
+            echo "::error::python-ci failed during setup (no python-version output). Check its setup and install steps."
+            exit 1
+          fi
+
   ci-ok:
     name: ci-ok
     if: always()
@@ -130,6 +180,8 @@ jobs:
       - lint
       - test-wf-node-ci
       - test-wf-node-ci-failing-assert
+      - test-wf-python-ci
+      - test-wf-python-ci-failing-assert
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}

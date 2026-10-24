@@ -1,0 +1,18 @@
+[project]
+name = "python-ci-fixture"
+version = "0.0.0"
+requires-python = ">=3.12"
+
+[dependency-groups]
+dev = ["pytest", "ruff"]
+
+[build-system]
+requires = ["uv_build>=0.9,<0.14"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "fixture"
+
+[tool.uv]
+# Resolve only releases before this date (at least 7 days old when locked).
+exclude-newer = "2026-10-17T00:00:00Z"

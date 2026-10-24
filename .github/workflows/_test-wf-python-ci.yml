@@ -1,0 +1,68 @@
+# Internal. Tests .github/workflows/python-ci.yml against fixtures.
+# The failing-fixture case lives in _ci.yml, because a job that calls a
+# reusable workflow can't set continue-on-error. See docs/testing.md.
+name: _test-wf-python-ci
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  run-main:
+    name: Run python-ci (ruff + pytest)
+    # Local ref: tests the version in this commit/PR.
+    uses: ./.github/workflows/python-ci.yml
+    permissions:
+      contents: read
+    with:
+      working-directory: tests/fixtures/python-ci
+
+  run-bare:
+    name: Run python-ci (no dev tools)
+    uses: ./.github/workflows/python-ci.yml
+    permissions:
+      contents: read
+    with:
+      working-directory: tests/fixtures/python-ci-bare
+
+  assert:
+    name: Assert python-ci outputs
+    needs: [run-main, run-bare]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check outputs
+        env:
+          MAIN_PYTHON: ${{ needs.run-main.outputs.python-version }}
+          MAIN_COMMANDS: ${{ needs.run-main.outputs.commands-run }}
+          BARE_PYTHON: ${{ needs.run-bare.outputs.python-version }}
+          BARE_COMMANDS: ${{ needs.run-bare.outputs.commands-run }}
+        run: |
+          fail=0
+          check() {
+            if [ "$2" != "$3" ]; then
+              echo "::error::$1: expected '$3', got '$2'."
+              fail=1
+            fi
+          }
+
+          # pyright isn't in the fixture's dev group, so it must be skipped.
+          check "main commands-run" "$MAIN_COMMANDS" $'ruff check\nruff format --check\npytest'
+          case "$MAIN_PYTHON" in
+            3.12.*) ;;
+            *) echo "::error::main python-version: expected 3.12.x from .python-version, got '$MAIN_PYTHON'."; fail=1 ;;
+          esac
+
+          # No dev tools, so every command is skipped.
+          check "bare commands-run" "$BARE_COMMANDS" ""
+          # No .python-version, so uv honours requires-python = ">=3.13".
+          minor="${BARE_PYTHON#3.}"
+          minor="${minor%%.*}"
+          case "$BARE_PYTHON" in
+            3.*) if [ "$minor" -lt 13 ]; then echo "::error::bare python-version: expected >=3.13 from requires-python, got '$BARE_PYTHON'."; fail=1; fi ;;
+            *) echo "::error::bare python-version: expected 3.x.y, got '$BARE_PYTHON'."; fail=1 ;;
+          esac
+
+          exit "$fail"
