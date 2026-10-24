@@ -1,6 +1,6 @@
 # Azure Container Apps setup
 
-One-time setup for deploying to an Azure Container App with [deploy-container-app](../actions/deploy-container-app/). The same steps set up the catalog's own `catalog-sandbox`, which the live tests deploy to on push to `main`, and a consumer repo's `production` app.
+One-time setup for deploying to an Azure Container App with the [azure-container-app-deploy](../.github/workflows/azure-container-app-deploy.yml) workflow or the [deploy-container-app](../actions/deploy-container-app/) action. The same steps set up the catalog's own `catalog-sandbox`, which the live tests deploy to on push to `main`, and a consumer repo's `production` app.
 
 GitHub logs in to Azure with OIDC, so there's no client secret to store or rotate. The app pulls from Azure Container Registry with its own managed identity, so there's no registry password either.
 
@@ -105,14 +105,23 @@ gh secret set AZURE_SUBSCRIPTION_ID --repo "$REPO" --env "$GH_ENV" --body "$(az 
 
 For a `production` environment in a consumer repo, also add required reviewers in **Settings → Environments**.
 
-The catalog's live tests also read two repo variables, and stay skipped until both are set:
+The catalog's live tests also read three repo variables, and stay skipped until they're set:
 
 ```sh
 gh variable set AZURE_SANDBOX_RESOURCE_GROUP --repo "$REPO" --body "$RG"
 gh variable set AZURE_SANDBOX_CONTAINER_APP --repo "$REPO" --body "$APP"
+gh variable set AZURE_SANDBOX_REGISTRY --repo "$REPO" --body "$ACR.azurecr.io"
 ```
 
-## Cost
+## 5. Deploy on release
+
+The [caller example](../examples/callers/azure-container-app-deploy.yml) runs the deploy as a job in the repo's release-please workflow, gated on `release_created`, and passes `tag_name` as `image-tags`. It runs on the `main` push that merges the release PR, so it matches the federated credential and the `main`-only branch policy.
+
+Don't use a separate workflow triggered by `release` or tag events. Releases created with `GITHUB_TOKEN` don't trigger workflows, and a tag ref fails the branch policy.
+
+In a monorepo using release-please's manifest mode, gate each app's deploy job on its own path's output, e.g. `needs.release-please.outputs['apps/api--release_created']`, and pass `apps/api--tag_name`.
+
+## 6. Cost
 
 With `--min-replicas 0`, the sandbox app costs close to nothing when idle. ACR Basic is the main fixed cost, plus a little Log Analytics ingestion. To remove everything:
 

@@ -41,6 +41,7 @@ jobs:
       wf-node-ci: ${{ steps.filter.outputs.wf-node-ci }}
       wf-python-ci: ${{ steps.filter.outputs.wf-python-ci }}
       wf-shell-lint: ${{ steps.filter.outputs.wf-shell-lint }}
+      wf-azure-container-app-deploy: ${{ steps.filter.outputs.wf-azure-container-app-deploy }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -108,6 +109,12 @@ jobs:
               - 'tests/fixtures/shell-lint/**'
               - 'tests/fixtures/shell-lint-failing/**'
               - 'tests/fixtures/shell-lint-secret/**'
+            wf-azure-container-app-deploy:
+              - '.github/workflows/azure-container-app-deploy.yml'
+              - 'actions/deploy-container-app/**'
+              - '.github/workflows/_test-wf-azure-container-app-deploy.yml'
+              - 'tests/fixtures/azure-container-app-deploy/**'
+              - 'tests/fixtures/azure-container-app-deploy-failing/**'
 
   lint:
     name: Lint
@@ -279,6 +286,60 @@ jobs:
     permissions:
       contents: read
 
+  # `id-token: write` is for the live sandbox deploy, which only runs on main
+  # (see the test workflow). The workflow's job declares it even on dry runs.
+  test-wf-azure-container-app-deploy:
+    name: Test workflow azure-container-app-deploy
+    needs: changes
+    if: needs.changes.outputs.wf-azure-container-app-deploy == 'true'
+    uses: ./.github/workflows/_test-wf-azure-container-app-deploy.yml
+    permissions:
+      contents: read
+      id-token: write
+
+  # Failure path: a dry run of a Dockerfile that can't build. Expected to
+  # fail, so it stays out of `ci-ok.needs` and the assert job below checks
+  # its result instead. Skipped on push to main, where the PR already ran it.
+  test-wf-azure-container-app-deploy-failing:
+    name: Test workflow azure-container-app-deploy (failing fixture, expected to fail)
+    needs: changes
+    if: github.event_name != 'push' && needs.changes.outputs.wf-azure-container-app-deploy == 'true'
+    uses: ./.github/workflows/azure-container-app-deploy.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      registry: catalogtest.azurecr.io
+      resource-group: unused
+      container-app: unused
+      image-name: workflow-catalog-test
+      working-directory: tests/fixtures/azure-container-app-deploy-failing
+      dry-run: true
+
+  test-wf-azure-container-app-deploy-failing-assert:
+    name: Assert azure-container-app-deploy fails on failing fixture
+    needs: [changes, test-wf-azure-container-app-deploy-failing]
+    if: ${{ !cancelled() && github.event_name != 'push' && needs.changes.outputs.wf-azure-container-app-deploy == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check result
+        env:
+          RESULT: ${{ needs.test-wf-azure-container-app-deploy-failing.result }}
+          TAGS: ${{ needs.test-wf-azure-container-app-deploy-failing.outputs.tags }}
+          DIGEST: ${{ needs.test-wf-azure-container-app-deploy-failing.outputs.digest }}
+        run: |
+          if [ "$RESULT" != failure ]; then
+            echo "::error::Expected azure-container-app-deploy to fail on tests/fixtures/azure-container-app-deploy-failing, got '$RESULT'."
+            exit 1
+          fi
+          # Tags prove it got past input checks; no digest proves the build is what failed.
+          if [ -z "$TAGS" ] || [ -n "$DIGEST" ]; then
+            echo "::error::azure-container-app-deploy failed somewhere other than the build (tags '$TAGS', digest '$DIGEST'). Check its input checks."
+            exit 1
+          fi
+
   ci-ok:
     name: ci-ok
     if: always()
@@ -295,6 +356,8 @@ jobs:
       - test-wf-python-ci
       - test-wf-python-ci-failing-assert
       - test-wf-shell-lint
+      - test-wf-azure-container-app-deploy
+      - test-wf-azure-container-app-deploy-failing-assert
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}

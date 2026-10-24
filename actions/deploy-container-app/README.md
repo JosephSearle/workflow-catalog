@@ -1,10 +1,12 @@
 # deploy-container-app
 
-Updates an Azure Container App to an image and waits for the new revision to be provisioned and healthy. With `health-check-path`, it also GETs the app's URL until it returns 2xx. If the revision fails or times out, the log shows its provisioning error and the last 50 system log lines.
+Updates an Azure Container App to an image and waits for the new revision to be provisioned and healthy. With `health-check-path`, it also GETs that path on the new revision until it returns 2xx. If the revision fails or times out, the log shows its provisioning error and the last 50 system log lines.
 
 The action doesn't log in. Run [`azure/login`](https://github.com/Azure/login) first, ideally with OIDC, so the deploy uses whatever identity your job chose. [docs/azure-container-apps.md](../../docs/azure-container-apps.md) sets up the app, the identity and its roles.
 
 Pin the image by digest (`registry/name@sha256:…`) so the revision runs exactly what you built. A tag-only reference works, but gets a warning.
+
+The [azure-container-app-deploy](../../.github/workflows/azure-container-app-deploy.yml) workflow is built on this action. It adds the image build and push.
 
 ## Usage
 
