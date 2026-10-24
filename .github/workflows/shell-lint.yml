@@ -26,6 +26,14 @@ on:
         type: string
         required: false
         default: ""
+      fail-on-findings:
+        description: >-
+          Fail the job when a check finds problems. false reports findings as warnings and in the
+          *-result outputs without failing, e.g. while adopting gitleaks on a repo with old secrets.
+          A check that can't run ("error") always fails the job.
+        type: boolean
+        required: false
+        default: true
       runs-on:
         description: Runner label for the job. Linux x64 and arm64 runners are supported.
         type: string
@@ -245,6 +253,7 @@ jobs:
           GITLEAKS_OUTCOME: ${{ steps.gitleaks.outcome }}
           GITLEAKS_STATUS: ${{ steps.gitleaks.outputs.status }}
           PRE_COMMIT_OUTCOME: ${{ steps.pre-commit.outcome }}
+          FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
         run: |
           # Only the tools' own "findings" exit codes count as failure.
           shellcheck_result="$SHELLCHECK_OUTCOME"
@@ -272,11 +281,22 @@ jobs:
             echo "| pre-commit | $PRE_COMMIT_OUTCOME |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-          failed=""
-          case "$shellcheck_result" in failure|error) failed="$failed shellcheck" ;; esac
-          case "$gitleaks_result" in failure|error) failed="$failed gitleaks" ;; esac
-          [ "$PRE_COMMIT_OUTCOME" = failure ] && failed="$failed pre-commit"
-          if [ -n "$failed" ]; then
-            echo "::error::Failed:$failed. See the step logs above."
+          # Errors always fail. Findings fail unless fail-on-findings is false.
+          errored="" found=""
+          for check in "shellcheck:$shellcheck_result" "gitleaks:$gitleaks_result" "pre-commit:$PRE_COMMIT_OUTCOME"; do
+            case "${check#*:}" in
+              error) errored="$errored ${check%%:*}" ;;
+              failure) found="$found ${check%%:*}" ;;
+            esac
+          done
+          if [ -n "$errored" ]; then
+            echo "::error::Couldn't run:$errored. See the step logs above."
             exit 1
+          fi
+          if [ -n "$found" ]; then
+            if [ "$FAIL_ON_FINDINGS" = true ]; then
+              echo "::error::Found problems:$found. See the step logs above."
+              exit 1
+            fi
+            echo "::warning::Found problems:$found. Not failing because fail-on-findings is false."
           fi

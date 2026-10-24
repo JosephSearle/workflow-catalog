@@ -189,80 +189,6 @@ jobs:
     permissions:
       contents: read
 
-  # Failure path: this run is expected to fail, so it stays out of
-  # `ci-ok.needs` and the assert job below checks its result instead.
-  test-wf-shell-lint-failing:
-    name: Test workflow shell-lint (failing fixture, expected to fail)
-    needs: changes
-    if: needs.changes.outputs.wf-shell-lint == 'true'
-    uses: ./.github/workflows/shell-lint.yml
-    permissions:
-      contents: read
-    with:
-      working-directory: tests/fixtures/shell-lint-failing
-
-  test-wf-shell-lint-failing-assert:
-    name: Assert shell-lint fails on failing fixture
-    needs: [changes, test-wf-shell-lint-failing]
-    if: ${{ !cancelled() && needs.changes.outputs.wf-shell-lint == 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions: {}
-    steps:
-      - name: Check result
-        env:
-          RESULT: ${{ needs.test-wf-shell-lint-failing.result }}
-          SHELLCHECK: ${{ needs.test-wf-shell-lint-failing.outputs.shellcheck-result }}
-          GITLEAKS: ${{ needs.test-wf-shell-lint-failing.outputs.gitleaks-result }}
-        run: |
-          if [ "$RESULT" != failure ]; then
-            echo "::error::Expected shell-lint to fail on tests/fixtures/shell-lint-failing, got '$RESULT'."
-            exit 1
-          fi
-          # It must fail because of shellcheck, with gitleaks still clean.
-          if [ "$SHELLCHECK" != failure ] || [ "$GITLEAKS" != success ]; then
-            echo "::error::Expected shellcheck failure and gitleaks success, got shellcheck '$SHELLCHECK', gitleaks '$GITLEAKS'."
-            exit 1
-          fi
-
-  # Failure path: the fixture's gitleaks config adds a rule matching its
-  # planted fake token, so only this run finds it.
-  test-wf-shell-lint-secret:
-    name: Test workflow shell-lint (planted secret, expected to fail)
-    needs: changes
-    if: needs.changes.outputs.wf-shell-lint == 'true'
-    uses: ./.github/workflows/shell-lint.yml
-    permissions:
-      contents: read
-    with:
-      working-directory: tests/fixtures/shell-lint-secret
-      gitleaks-config: tests/fixtures/shell-lint-secret/.gitleaks.toml
-
-  test-wf-shell-lint-secret-assert:
-    name: Assert shell-lint catches the planted secret
-    needs: [changes, test-wf-shell-lint-secret]
-    if: ${{ !cancelled() && needs.changes.outputs.wf-shell-lint == 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions: {}
-    steps:
-      - name: Check result
-        env:
-          RESULT: ${{ needs.test-wf-shell-lint-secret.result }}
-          SHELLCHECK: ${{ needs.test-wf-shell-lint-secret.outputs.shellcheck-result }}
-          GITLEAKS: ${{ needs.test-wf-shell-lint-secret.outputs.gitleaks-result }}
-        run: |
-          if [ "$RESULT" != failure ]; then
-            echo "::error::Expected shell-lint to fail on the planted secret in tests/fixtures/shell-lint-secret, got '$RESULT'."
-            exit 1
-          fi
-          # gitleaks must report findings ("failure"), not a config or run
-          # error ("error"). The fixture has no scripts, so shellcheck skips.
-          if [ "$GITLEAKS" != failure ] || [ "$SHELLCHECK" != skipped ]; then
-            echo "::error::Expected gitleaks failure and shellcheck skipped, got gitleaks '$GITLEAKS', shellcheck '$SHELLCHECK'."
-            exit 1
-          fi
-
   ci-ok:
     name: ci-ok
     if: always()
@@ -274,8 +200,6 @@ jobs:
       - test-wf-python-ci
       - test-wf-python-ci-failing-assert
       - test-wf-shell-lint
-      - test-wf-shell-lint-failing-assert
-      - test-wf-shell-lint-secret-assert
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}

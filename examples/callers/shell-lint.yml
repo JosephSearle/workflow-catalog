@@ -27,5 +27,6 @@ jobs:
     #   working-directory: .
     #   pre-commit: auto  # auto | true | false
     #   gitleaks-config: ""  # e.g. .github/gitleaks.toml, relative to the repo root
+    #   fail-on-findings: true  # false: warn only, e.g. while cleaning up old secrets
     #   runs-on: ubuntu-latest  # the only runner the catalog tests; Linux x64 and arm64 work
     #   timeout-minutes: 10
