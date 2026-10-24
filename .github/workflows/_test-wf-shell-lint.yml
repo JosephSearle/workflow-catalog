@@ -1,7 +1,6 @@
 # Internal. Tests .github/workflows/shell-lint.yml against fixtures.
-# The failing cases (shellcheck error, planted secret) live in _ci.yml,
-# because a job that calls a reusable workflow can't set continue-on-error.
-# See docs/testing.md.
+# The failing fixtures run with fail-on-findings: false, so the calls succeed
+# and the assert job checks their *-result outputs instead of a red job.
 name: _test-wf-shell-lint
 
 on:
@@ -29,9 +28,30 @@ jobs:
       working-directory: tests/fixtures/shell-lint
       runs-on: ubuntu-24.04-arm
 
+  run-failing:
+    name: Run shell-lint (shellcheck finding)
+    uses: ./.github/workflows/shell-lint.yml
+    permissions:
+      contents: read
+    with:
+      working-directory: tests/fixtures/shell-lint-failing
+      fail-on-findings: false
+
+  # The fixture's gitleaks config adds a rule matching its planted fake token,
+  # so only this run finds it.
+  run-secret:
+    name: Run shell-lint (planted secret)
+    uses: ./.github/workflows/shell-lint.yml
+    permissions:
+      contents: read
+    with:
+      working-directory: tests/fixtures/shell-lint-secret
+      gitleaks-config: tests/fixtures/shell-lint-secret/.gitleaks.toml
+      fail-on-findings: false
+
   assert:
     name: Assert shell-lint outputs
-    needs: [run, run-arm]
+    needs: [run, run-arm, run-failing, run-secret]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
@@ -46,6 +66,11 @@ jobs:
           ARM64_SHELLCHECK: ${{ needs.run-arm.outputs.shellcheck-result }}
           ARM64_GITLEAKS: ${{ needs.run-arm.outputs.gitleaks-result }}
           ARM64_PRE_COMMIT: ${{ needs.run-arm.outputs.pre-commit-result }}
+          FAILING_FILES: ${{ needs.run-failing.outputs.shellcheck-files }}
+          FAILING_SHELLCHECK: ${{ needs.run-failing.outputs.shellcheck-result }}
+          FAILING_GITLEAKS: ${{ needs.run-failing.outputs.gitleaks-result }}
+          SECRET_SHELLCHECK: ${{ needs.run-secret.outputs.shellcheck-result }}
+          SECRET_GITLEAKS: ${{ needs.run-secret.outputs.gitleaks-result }}
         run: |
           fail=0
           check() {
@@ -65,5 +90,15 @@ jobs:
             # The fixture has a .pre-commit-config.yaml, so auto runs it.
             check "$arch pre-commit-result" "${!pre_commit}" success
           done
+
+          # A shellcheck finding, with gitleaks still clean.
+          check "failing shellcheck-files" "$FAILING_FILES" "run.sh"
+          check "failing shellcheck-result" "$FAILING_SHELLCHECK" failure
+          check "failing gitleaks-result" "$FAILING_GITLEAKS" success
+
+          # gitleaks must report a finding ("failure"), not a config or run
+          # error ("error"). The fixture has no scripts, so shellcheck skips.
+          check "secret gitleaks-result" "$SECRET_GITLEAKS" failure
+          check "secret shellcheck-result" "$SECRET_SHELLCHECK" skipped
 
           exit "$fail"
