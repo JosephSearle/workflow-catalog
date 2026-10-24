@@ -16,12 +16,13 @@ Enforced by `_lint.yml` (zizmor, actionlint) and review:
 
 ## Azure sandbox
 
-The `deploy-container-app` live test deploys to a real Azure Container App, the only catalog test that reaches outside GitHub.
+The `deploy-container-app` and `azure-container-app-deploy` live tests deploy to a real Azure Container App, the only catalog tests that reach outside GitHub.
 
-- `_ci.yml` grants `id-token: write` to `test-action-deploy-container-app`. Only its `live` job uses it, and that job runs on `main` only (push or manual run).
+- `_ci.yml` grants `id-token: write` to `test-action-deploy-container-app` and the `test-wf-azure-container-app-deploy` jobs. Only the `live` jobs log in to Azure, and they run on `main` only (push or manual run).
 - The job runs in the `catalog-sandbox` environment. Its federated credential trusts `repo:JosephSearle/workflow-catalog:environment:catalog-sandbox`, and the environment's custom branch policy allows only `main`. PR runs can't get an Azure token.
+- `azure-container-app-deploy`'s PR tests are dry runs with no environment, so they get no secrets and never log in to Azure.
 - The service principal holds `Contributor` on the sandbox app and `AcrPush` on its registry, nothing wider. Setup is in [azure-container-apps.md](azure-container-apps.md).
-- `azure/login` is from a Marketplace verified creator (Azure), so the allowlist below doesn't need it.
+- `azure/login`, `docker/setup-buildx-action` and `docker/build-push-action` are from Marketplace verified creators (Azure, Docker), so the allowlist below doesn't need them.
 
 ## Claude Code config
 

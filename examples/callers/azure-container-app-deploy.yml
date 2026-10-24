@@ -1,0 +1,71 @@
+# Copy to .github/workflows/ in a consumer repo.
+# Replace <sha> # vX.Y.Z with a release's full commit SHA and tag. Dependabot keeps it current.
+#
+# Deploys when a release-please release PR merges. The deploy job runs in the
+# same workflow, gated on release-please's release_created output. A separate
+# workflow listening for `release` or tag events wouldn't fire for releases
+# made with GITHUB_TOKEN, and its tag ref would fail a main-only environment
+# branch policy.
+#
+# Without release-please, deploy on every push to main instead: drop the
+# release-please job, the `needs:` and `if:` lines, and `image-tags`.
+#
+# One-time Azure and environment setup: docs/azure-container-apps.md in the catalog.
+name: release
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@<sha> # vX.Y.Z
+
+  azure-container-app-deploy:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    # One deploy per environment at a time. Queue rather than cancel, so a
+    # half-finished deploy is never interrupted.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    uses: JosephSearle/workflow-catalog/.github/workflows/azure-container-app-deploy.yml@<sha> # vX.Y.Z
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      environment: production
+      registry: myacr.azurecr.io
+      resource-group: rg-my-app
+      container-app: ca-my-app
+      image-tags: ${{ needs.release-please.outputs.tag_name }}
+      # Defaults shown:
+      # image-name: ""            # repo name, lowercased
+      # working-directory: .
+      # dockerfile: Dockerfile    # relative to working-directory
+      # build-args: ""            # one KEY=VALUE per line
+      # container-name: ""        # the app's only container
+      # health-check-path: ""     # e.g. /healthz
+      # dry-run: false
+      # runs-on: ubuntu-latest    # the only runner the catalog tests
+      # timeout-minutes: 20
+    # Keep the AZURE_* values as secrets on the `production` environment. The
+    # deploy job reads them there, so nothing needs passing. To pass repo
+    # secrets instead:
+    # secrets:
+    #   AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+    #   AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+    #   AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}

@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this repository.
 
 ## What this repo is
 
-A catalog of reusable GitHub Actions workflows and composite actions that JosephSearle's other repos call by Git ref. It's YAML and shell only: there's no build step. The whole repo is released under a single semver version. The public workflows are `node-ci` and `python-ci` (released in `v1.0.0`) and `shell-lint`. The actions are `setup-node-deps` (used by `node-ci`), `setup-python-deps` (used by `python-ci`), `lint-shell` and `scan-secrets` (both used by `shell-lint`), and `deploy-container-app` (standalone for now; the planned `azure-container-app-deploy` workflow will use it).
+A catalog of reusable GitHub Actions workflows and composite actions that JosephSearle's other repos call by Git ref. It's YAML and shell only: there's no build step. The whole repo is released under a single semver version. The public workflows are `node-ci` and `python-ci` (released in `v1.0.0`), `shell-lint` and `azure-container-app-deploy`. The actions are `setup-node-deps` (used by `node-ci`), `setup-python-deps` (used by `python-ci`), `lint-shell` and `scan-secrets` (both used by `shell-lint`), and `deploy-container-app` (used by `azure-container-app-deploy`).
 
 ## Commands
 

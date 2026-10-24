@@ -1,0 +1,129 @@
+# Internal. Tests .github/workflows/azure-container-app-deploy.yml against fixtures.
+#
+# `dry-run` runs on every PR without Azure: it builds the fixture and checks
+# the digest and tags. `live` runs on main only (push, or a manual _ci run).
+# It builds, pushes and deploys the fixture to the sandbox app through the
+# `catalog-sandbox` environment, whose secrets the workflow's job reads
+# directly (see docs/azure-container-apps.md). It's skipped until the
+# AZURE_SANDBOX_* repo variables exist. Dry runs use no environment.
+name: _test-wf-azure-container-app-deploy
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  dry-run:
+    name: Run azure-container-app-deploy (dry run)
+    # Local ref: tests the version in this commit/PR.
+    uses: ./.github/workflows/azure-container-app-deploy.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      registry: catalogtest.azurecr.io
+      resource-group: unused
+      container-app: unused
+      image-name: workflow-catalog-test
+      image-tags: v0.0.0-test
+      working-directory: tests/fixtures/azure-container-app-deploy
+      build-args: BUILD_ID=${{ github.run_id }}-${{ github.run_attempt }}
+      dry-run: true
+
+  assert-dry-run:
+    name: Assert azure-container-app-deploy dry-run outputs
+    needs: dry-run
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check outputs
+        env:
+          RESULT: ${{ needs.dry-run.outputs.result }}
+          IMAGE: ${{ needs.dry-run.outputs.image }}
+          DIGEST: ${{ needs.dry-run.outputs.digest }}
+          TAGS: ${{ needs.dry-run.outputs.tags }}
+          REVISION: ${{ needs.dry-run.outputs.revision }}
+          SHA: ${{ github.sha }}
+        run: |
+          fail=0
+          if [ "$RESULT" != dry-run ]; then
+            echo "::error::result: expected 'dry-run', got '$RESULT'."
+            fail=1
+          fi
+          if [[ "$DIGEST" != sha256:* ]]; then
+            echo "::error::digest: expected sha256:…, got '$DIGEST'."
+            fail=1
+          fi
+          # Nothing was pushed or deployed.
+          if [ -n "$IMAGE" ] || [ -n "$REVISION" ]; then
+            echo "::error::Expected no image or revision on a dry run, got image '$IMAGE', revision '$REVISION'."
+            fail=1
+          fi
+          expected="catalogtest.azurecr.io/workflow-catalog-test:$SHA catalogtest.azurecr.io/workflow-catalog-test:v0.0.0-test"
+          if [ "$TAGS" != "$expected" ]; then
+            echo "::error::tags: expected '$expected', got '$TAGS'."
+            fail=1
+          fi
+          exit "$fail"
+
+  live:
+    name: Run azure-container-app-deploy (live sandbox)
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && github.ref == 'refs/heads/main' && vars.AZURE_SANDBOX_CONTAINER_APP != ''
+      && vars.AZURE_SANDBOX_REGISTRY != ''
+    # One deploy to the shared sandbox app at a time, across catalog tests.
+    concurrency:
+      group: azure-sandbox
+      cancel-in-progress: false
+    uses: ./.github/workflows/azure-container-app-deploy.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      environment: catalog-sandbox
+      registry: ${{ vars.AZURE_SANDBOX_REGISTRY }}
+      resource-group: ${{ vars.AZURE_SANDBOX_RESOURCE_GROUP }}
+      container-app: ${{ vars.AZURE_SANDBOX_CONTAINER_APP }}
+      image-name: workflow-catalog-test
+      working-directory: tests/fixtures/azure-container-app-deploy
+      build-args: BUILD_ID=${{ github.run_id }}-${{ github.run_attempt }}
+      health-check-path: /
+
+  assert-live:
+    name: Assert azure-container-app-deploy live outputs
+    needs: live
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check outputs
+        env:
+          RESULT: ${{ needs.live.outputs.result }}
+          IMAGE: ${{ needs.live.outputs.image }}
+          REVISION: ${{ needs.live.outputs.revision }}
+          PREVIOUS: ${{ needs.live.outputs.previous-revision }}
+          URL: ${{ needs.live.outputs.url }}
+        run: |
+          fail=0
+          if [ "$RESULT" != deployed ]; then
+            echo "::error::result: expected 'deployed', got '$RESULT'."
+            fail=1
+          fi
+          if [[ "$IMAGE" != *@sha256:* ]]; then
+            echo "::error::image: expected <registry>/<name>@sha256:…, got '$IMAGE'."
+            fail=1
+          fi
+          # BUILD_ID changes the digest per run, so every run makes a new
+          # revision.
+          if [ -z "$REVISION" ] || [ -z "$PREVIOUS" ] || [ "$REVISION" = "$PREVIOUS" ]; then
+            echo "::error::Expected a new revision different from the previous one, got revision '$REVISION', previous-revision '$PREVIOUS'."
+            fail=1
+          fi
+          case "$URL" in
+            https://*) ;;
+            *) echo "::error::url: expected https://<fqdn>, got '$URL'."; fail=1 ;;
+          esac
+          exit "$fail"

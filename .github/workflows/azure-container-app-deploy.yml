@@ -1,0 +1,322 @@
+# Public. Called by consumer repos. The file name is public API: renaming it is a breaking change.
+# Docs: README.md#workflows   Example caller: examples/callers/azure-container-app-deploy.yml
+name: azure-container-app-deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: >-
+          GitHub environment the deploy job runs in. It sets the OIDC subject
+          (repo:<owner>/<repo>:environment:<name>) that Azure trusts, and applies the environment's
+          protection rules and secrets. Required unless dry-run. Dry runs never use an environment,
+          so a PR build check isn't blocked by production's rules.
+        type: string
+        required: false
+        default: ""
+      registry:
+        description: >-
+          Azure Container Registry login server in the public cloud, e.g. "myacr.azurecr.io".
+          Registries with a domain name label (myacr-<hash>.azurecr.io) and sovereign clouds aren't
+          supported yet.
+        type: string
+        required: true
+      resource-group:
+        description: Resource group of the Container App.
+        type: string
+        required: true
+      container-app:
+        description: Name of the Container App.
+        type: string
+        required: true
+      image-name:
+        description: Repository in the registry. Empty uses the caller's repo name, lowercased.
+        type: string
+        required: false
+        default: ""
+      image-tags:
+        description: >-
+          Extra tags to push, separated by whitespace, e.g. release-please's tag_name ("v1.4.0").
+          The image is always tagged with the commit SHA. Tags are labels only: the deploy pins
+          the digest.
+        type: string
+        required: false
+        default: ""
+      working-directory:
+        description: Docker build context, relative to the repo root.
+        type: string
+        required: false
+        default: "."
+      dockerfile:
+        description: Dockerfile path, relative to working-directory.
+        type: string
+        required: false
+        default: Dockerfile
+      build-args:
+        description: >-
+          Docker build arguments, one KEY=VALUE per line. Not for secrets: build args are recorded
+          in the image history and in the pushed provenance attestation.
+        type: string
+        required: false
+        default: ""
+      container-name:
+        description: >-
+          Container in the app to update. Empty updates the app's only container, and fails when
+          the app has more than one.
+        type: string
+        required: false
+        default: ""
+      health-check-path:
+        description: >-
+          Path starting with "/", e.g. "/healthz". When set, GET on the new revision must return
+          2xx before the job passes, which needs external ingress. Empty skips the check.
+        type: string
+        required: false
+        default: ""
+      wait-timeout-seconds:
+        description: >-
+          How long to wait for the new revision to be provisioned and healthy. Keep it below
+          timeout-minutes, which also covers the build.
+        type: number
+        required: false
+        default: 600
+      dry-run:
+        description: >-
+          Build the image without pushing it, and skip every Azure step. Useful as a PR check that
+          the image still builds.
+        type: boolean
+        required: false
+        default: false
+      runs-on:
+        description: Runner label for the job.
+        type: string
+        required: false
+        default: ubuntu-latest
+      timeout-minutes:
+        description: Job timeout in minutes.
+        type: number
+        required: false
+        default: 20
+    secrets:
+      AZURE_CLIENT_ID:
+        description: >-
+          Client ID of the app registration that trusts this repo's environment. Required unless
+          dry-run. Environment secrets of the same name take precedence over passed ones.
+        required: false
+      AZURE_TENANT_ID:
+        description: Microsoft Entra tenant ID. Required unless dry-run.
+        required: false
+      AZURE_SUBSCRIPTION_ID:
+        description: Subscription ID of the Container App. Required unless dry-run.
+        required: false
+    outputs:
+      image:
+        description: Deployed image as "<registry>/<name>@sha256:…". Empty on a dry run.
+        value: ${{ jobs.deploy.outputs.image }}
+      digest:
+        description: Image digest, "sha256:…". Set on dry runs too.
+        value: ${{ jobs.deploy.outputs.digest }}
+      tags:
+        description: Space-separated tagged references that were built, e.g. "<registry>/<name>:<sha> <registry>/<name>:v1.4.0".
+        value: ${{ jobs.deploy.outputs.tags }}
+      revision:
+        description: Container App revision now running the image.
+        value: ${{ jobs.deploy.outputs.revision }}
+      previous-revision:
+        description: Latest ready revision before the deploy, for rolling back.
+        value: ${{ jobs.deploy.outputs.previous-revision }}
+      url:
+        description: The app's URL, "https://<fqdn>". Empty when the app has no ingress.
+        value: ${{ jobs.deploy.outputs.url }}
+      result:
+        description: >-
+          "deployed", "unhealthy", "invalid-input" or "error" (from deploy-container-app), or
+          "dry-run". Empty if the job failed before the deploy step, e.g. in the build.
+        value: ${{ jobs.deploy.outputs.result }}
+
+permissions: {}
+
+jobs:
+  deploy:
+    name: Deploy to Azure Container Apps
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    # An empty name means no environment, so dry runs don't need one.
+    environment:
+      name: ${{ !inputs.dry-run && inputs.environment || '' }}
+      url: ${{ steps.deploy.outputs.url }}
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      image: ${{ steps.record.outputs.image }}
+      digest: ${{ steps.build.outputs.digest }}
+      tags: ${{ steps.resolve.outputs.tags }}
+      revision: ${{ steps.deploy.outputs.revision }}
+      previous-revision: ${{ steps.deploy.outputs.previous-revision }}
+      url: ${{ steps.deploy.outputs.url }}
+      result: ${{ steps.record.outputs.result }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - id: resolve
+        name: Check inputs and resolve image names
+        env:
+          DRY_RUN: ${{ inputs.dry-run }}
+          REGISTRY: ${{ inputs.registry }}
+          IMAGE_NAME: ${{ inputs.image-name }}
+          IMAGE_TAGS: ${{ inputs.image-tags }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          HAS_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID != '' }}
+          HAS_TENANT_ID: ${{ secrets.AZURE_TENANT_ID != '' }}
+          HAS_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID != '' }}
+        run: |
+          fail=0
+          error() { echo "::error::$1"; fail=1; }
+
+          if [ "$DRY_RUN" != true ] && [ -z "$ENVIRONMENT" ]; then
+            error "environment is required unless dry-run is true."
+          fi
+          REGISTRY="${REGISTRY,,}"
+          if ! [[ "$REGISTRY" =~ ^[a-z0-9]{5,50}\.azurecr\.io$ ]]; then
+            error "registry must be an ACR login server like 'myacr.azurecr.io', got '$REGISTRY'. \
+          Domain-name-label registries and sovereign clouds aren't supported yet."
+          fi
+          # GITHUB_REPOSITORY is set for every event, unlike the payload's repository.name.
+          name="${IMAGE_NAME:-${GITHUB_REPOSITORY#*/}}"
+          name="${name,,}"
+          if ! [[ "$name" =~ ^[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*$ ]]; then
+            error "image-name '$name' isn't a valid repository name: lowercase letters, digits and . _ - / separators."
+          fi
+          if [ "$DRY_RUN" != true ]; then
+            for pair in "AZURE_CLIENT_ID:$HAS_CLIENT_ID" "AZURE_TENANT_ID:$HAS_TENANT_ID" "AZURE_SUBSCRIPTION_ID:$HAS_SUBSCRIPTION_ID"; do
+              if [ "${pair#*:}" != true ]; then
+                error "Secret ${pair%%:*} is required unless dry-run is true. Set it on the '$ENVIRONMENT' environment or pass it in secrets:."
+              fi
+            done
+          fi
+
+          image="$REGISTRY/$name"
+          tags="$image:$GITHUB_SHA"
+          # Split IMAGE_TAGS on whitespace without glob expansion.
+          set -f
+          for tag in $IMAGE_TAGS; do
+            if ! [[ "$tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+              error "image-tags: '$tag' isn't a valid Docker tag (letters, digits, _ . -, up to 128, not starting with . or -)."
+            fi
+            tags="$tags $image:$tag"
+          done
+          set +f
+          [ "$fail" = 0 ] || exit 1
+
+          # build-push-action splits tags on commas or newlines, not spaces.
+          {
+            echo "image=$image"
+            echo "tags=$tags"
+            echo "build-tags=${tags// /,}"
+            echo "acr=${REGISTRY%%.*}"
+            echo "cache-scope=$name"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check out caller repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to Azure
+        if: ${{ !inputs.dry-run }}
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Log in to the registry
+        if: ${{ !inputs.dry-run }}
+        env:
+          ACR: ${{ steps.resolve.outputs.acr }}
+        run: az acr login --name "$ACR"
+
+      # Build before checking out the catalog, so .catalog is never in the
+      # build context. A dry run still exports an image (without pushing) so
+      # that the digest is set.
+      - id: build
+        name: Build and push image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ inputs.working-directory }}
+          file: ${{ inputs.working-directory }}/${{ inputs.dockerfile }}
+          build-args: ${{ inputs.build-args }}
+          platforms: linux/amd64
+          tags: ${{ steps.resolve.outputs.build-tags }}
+          outputs: type=image,push=${{ !inputs.dry-run }}
+          provenance: ${{ !inputs.dry-run && 'mode=max' || 'false' }}
+          sbom: ${{ !inputs.dry-run }}
+          cache-from: type=gha,scope=${{ steps.resolve.outputs.cache-scope }}
+          # ignore-error keeps the build passing when the caller limits the
+          # job to cache-mode: read.
+          cache-to: type=gha,mode=max,scope=${{ steps.resolve.outputs.cache-scope }},ignore-error=true
+
+      # Check out the catalog at the exact commit of this workflow so that
+      # catalog actions always match the workflow's version.
+      - name: Check out catalog
+        if: ${{ !inputs.dry-run }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .catalog
+          sparse-checkout: /actions/
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      # .catalog must stay until the job ends: catalog actions' post steps
+      # reload it from there. Hide it from git and gitignore-aware tools.
+      - name: Exclude catalog checkout from git
+        if: ${{ !inputs.dry-run }}
+        run: echo '/.catalog/' >> .git/info/exclude
+
+      - id: deploy
+        name: Deploy to the Container App
+        if: ${{ !inputs.dry-run }}
+        uses: ./.catalog/actions/deploy-container-app
+        with:
+          resource-group: ${{ inputs.resource-group }}
+          container-app: ${{ inputs.container-app }}
+          image: ${{ steps.resolve.outputs.image }}@${{ steps.build.outputs.digest }}
+          container-name: ${{ inputs.container-name }}
+          health-check-path: ${{ inputs.health-check-path }}
+          wait-timeout-seconds: ${{ inputs.wait-timeout-seconds }}
+
+      - id: record
+        name: Record outputs and summary
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        env:
+          DRY_RUN: ${{ inputs.dry-run }}
+          IMAGE: ${{ steps.resolve.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.resolve.outputs.tags }}
+          RESULT: ${{ steps.deploy.outputs.result }}
+          REVISION: ${{ steps.deploy.outputs.revision }}
+          PREVIOUS: ${{ steps.deploy.outputs.previous-revision }}
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          if [ "$DRY_RUN" = true ]; then
+            result=dry-run
+            echo "image=" >> "$GITHUB_OUTPUT"
+          else
+            result="$RESULT"
+            echo "image=$IMAGE@$DIGEST" >> "$GITHUB_OUTPUT"
+          fi
+          echo "result=$result" >> "$GITHUB_OUTPUT"
+          {
+            echo "### azure-container-app-deploy"
+            echo
+            echo "| Result | Digest | Tags | Revision | Previous revision | URL |"
+            echo "| --- | --- | --- | --- | --- | --- |"
+            echo "| ${result:-none} | \`$DIGEST\` | ${TAGS// /<br>} | ${REVISION:-none} | ${PREVIOUS:-none} | ${URL:-none} |"
+          } >> "$GITHUB_STEP_SUMMARY"
