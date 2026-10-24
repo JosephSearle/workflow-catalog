@@ -49,7 +49,7 @@ echo "$bin" >> "$GITHUB_PATH"
 "$bin/shellcheck" --version
 echo "shellcheck-version=$SHELLCHECK_VERSION" >> "$GITHUB_OUTPUT"
 
-if ! cd -- "$WORKING_DIRECTORY" 2>/dev/null; then
+if ! CDPATH= cd -- "$WORKING_DIRECTORY" 2>/dev/null; then
   error "working-directory '$WORKING_DIRECTORY' doesn't exist."
 fi
 

@@ -46,8 +46,10 @@ jobs:
           check result "$RESULT" success
           # bin/deploy is found by its shebang, bin/report (python3) isn't.
           check files "$FILES" "bin/deploy scripts/build.sh"
-          if ! command -v shellcheck >/dev/null || [ -z "$VERSION" ]; then
-            echo "::error::Expected shellcheck on PATH and shellcheck-version set, got version '$VERSION'."
+          # Runner images ship their own shellcheck, so check it's the action's.
+          found="$(command -v shellcheck)"
+          if [ "$found" != "$RUNNER_TEMP/lint-shell-bin/shellcheck" ] || [ -z "$VERSION" ]; then
+            echo "::error::Expected the action's shellcheck first on PATH and a version, got '$found' and '$VERSION'."
             fail=1
           fi
           exit "$fail"
@@ -126,8 +128,10 @@ jobs:
           # The action installs shellcheck before the directory check, so later
           # steps (shell-lint's pre-commit hooks) have it even when the lint
           # can't run.
-          if ! command -v shellcheck >/dev/null || [ -z "$VERSION" ]; then
-            echo "::error::$CASE: expected shellcheck on PATH and shellcheck-version set, got version '$VERSION'."
+          # Runner images ship their own shellcheck, so check it's the action's.
+          found="$(command -v shellcheck)"
+          if [ "$found" != "$RUNNER_TEMP/lint-shell-bin/shellcheck" ] || [ -z "$VERSION" ]; then
+            echo "::error::$CASE: expected the action's shellcheck first on PATH and a version, got '$found' and '$VERSION'."
             fail=1
           fi
           exit "$fail"
