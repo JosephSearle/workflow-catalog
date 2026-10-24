@@ -19,9 +19,9 @@ jobs:
     permissions:
       contents: read
     # Defaults shown. The package manager comes from the lockfile (pnpm-lock.yaml or
-    # package-lock.json). pnpm projects need a "packageManager": "pnpm@x.y.z"
-    # field in package.json. Node comes from .nvmrc or .node-version (working-directory, then
-    # repo root), falling back to lts/*.
+    # package-lock.json) in working-directory or a parent; install runs there. pnpm projects
+    # need a "packageManager": "pnpm@x.y.z" field in that directory's package.json. Node comes
+    # from .nvmrc or .node-version (working-directory, workspace root, repo root), else lts/*.
     # with:
     #   working-directory: .
     #   node-version: ""

@@ -49,6 +49,8 @@ jobs:
               - '.github/workflows/_test-wf-node-ci.yml'
               - 'tests/fixtures/node-ci/**'
               - 'tests/fixtures/node-ci-npm/**'
+              - 'tests/fixtures/node-ci-workspace/**'
+              - 'tests/fixtures/node-ci-npm-workspace/**'
               - 'tests/fixtures/node-ci-failing/**'
             wf-python-ci:
               - '.github/workflows/python-ci.yml'
