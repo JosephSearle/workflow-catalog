@@ -37,6 +37,7 @@ jobs:
       action-setup-python-deps: ${{ steps.filter.outputs.action-setup-python-deps }}
       action-scan-secrets: ${{ steps.filter.outputs.action-scan-secrets }}
       action-lint-shell: ${{ steps.filter.outputs.action-lint-shell }}
+      action-deploy-container-app: ${{ steps.filter.outputs.action-deploy-container-app }}
       wf-node-ci: ${{ steps.filter.outputs.wf-node-ci }}
       wf-python-ci: ${{ steps.filter.outputs.wf-python-ci }}
       wf-shell-lint: ${{ steps.filter.outputs.wf-shell-lint }}
@@ -79,6 +80,9 @@ jobs:
               - 'tests/fixtures/shell-lint/**'
               - 'tests/fixtures/shell-lint-failing/**'
               - 'tests/fixtures/shell-lint-secret/**'
+            action-deploy-container-app:
+              - 'actions/deploy-container-app/**'
+              - '.github/workflows/_test-action-deploy-container-app.yml'
             wf-node-ci:
               - '.github/workflows/node-ci.yml'
               - 'actions/setup-node-deps/**'
@@ -164,6 +168,17 @@ jobs:
     uses: ./.github/workflows/_test-action-lint-shell.yml
     permissions:
       contents: read
+
+  # `id-token: write` is for the live sandbox deploy, which only runs on push
+  # to main (see the test workflow).
+  test-action-deploy-container-app:
+    name: Test action deploy-container-app
+    needs: changes
+    if: needs.changes.outputs.action-deploy-container-app == 'true'
+    uses: ./.github/workflows/_test-action-deploy-container-app.yml
+    permissions:
+      contents: read
+      id-token: write
 
   test-wf-node-ci:
     name: Test workflow node-ci
@@ -274,6 +289,7 @@ jobs:
       - test-action-setup-python-deps
       - test-action-scan-secrets
       - test-action-lint-shell
+      - test-action-deploy-container-app
       - test-wf-node-ci
       - test-wf-node-ci-failing-assert
       - test-wf-python-ci

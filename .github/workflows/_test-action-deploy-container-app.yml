@@ -1,0 +1,161 @@
+# Internal. Tests actions/deploy-container-app.
+#
+# `cases` runs on every PR without Azure: bad inputs, and az not logged in.
+# `live` runs on main only (push, or a manual _ci run). It deploys a pinned
+# sample image to the sandbox app through the `catalog-sandbox` environment's
+# OIDC credential (see docs/azure-container-apps.md). It's skipped until the
+# AZURE_SANDBOX_* repo variables exist.
+name: _test-action-deploy-container-app
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  cases:
+    name: Test deploy-container-app (${{ matrix.case }})
+    strategy:
+      fail-fast: false
+      matrix:
+        case: [missing-app, bad-timeout, bad-health-path, not-logged-in]
+        include:
+          - case: missing-app
+            container-app: ""
+            wait-timeout-seconds: "600"
+            health-check-path: ""
+            result: invalid-input
+          - case: bad-timeout
+            container-app: app
+            wait-timeout-seconds: 10m
+            health-check-path: ""
+            result: invalid-input
+          - case: bad-health-path
+            container-app: app
+            wait-timeout-seconds: "600"
+            health-check-path: healthz
+            result: invalid-input
+          # Valid inputs reach az, which the runner has but isn't logged in to.
+          - case: not-logged-in
+            container-app: app
+            wait-timeout-seconds: "600"
+            health-check-path: /healthz
+            result: error
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - id: subject
+        continue-on-error: true
+        uses: ./actions/deploy-container-app
+        with:
+          resource-group: rg
+          container-app: ${{ matrix.container-app }}
+          image: example.azurecr.io/app@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          health-check-path: ${{ matrix.health-check-path }}
+          wait-timeout-seconds: ${{ matrix.wait-timeout-seconds }}
+
+      - name: Assert outcome and result
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.subject.outcome }}
+          RESULT: ${{ steps.subject.outputs.result }}
+          REVISION: ${{ steps.subject.outputs.revision }}
+          EXPECTED_RESULT: ${{ matrix.result }}
+          CASE: ${{ matrix.case }}
+        run: |
+          fail=0
+          if [ "$OUTCOME" != failure ]; then
+            echo "::error::$CASE outcome: expected 'failure', got '$OUTCOME'."
+            fail=1
+          fi
+          if [ "$RESULT" != "$EXPECTED_RESULT" ]; then
+            echo "::error::$CASE result: expected '$EXPECTED_RESULT', got '$RESULT'."
+            fail=1
+          fi
+          # Nothing was deployed, so there's no revision.
+          if [ -n "$REVISION" ]; then
+            echo "::error::$CASE: expected no revision, got '$REVISION'."
+            fail=1
+          fi
+          exit "$fail"
+
+  live:
+    name: Test deploy-container-app (live sandbox)
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && github.ref == 'refs/heads/main' && vars.AZURE_SANDBOX_CONTAINER_APP != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: catalog-sandbox
+    # One deploy to the shared sandbox app at a time, across catalog tests.
+    concurrency:
+      group: azure-sandbox
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Deploying the image the app isn't already running always creates a
+      # new revision, so every run tests a real deploy. Both images are
+      # Microsoft samples that serve / on port 80.
+      - id: pick
+        name: Pick the image the app isn't running
+        shell: bash
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_SANDBOX_RESOURCE_GROUP }}
+          CONTAINER_APP: ${{ vars.AZURE_SANDBOX_CONTAINER_APP }}
+        run: |
+          quickstart=mcr.microsoft.com/k8se/quickstart@sha256:3a4d93c34c6753f24765ab17a36f1754aee9b02082b7d9553d17697b9e8252c4
+          helloworld=mcr.microsoft.com/azuredocs/containerapps-helloworld@sha256:e9b3e7c34664c7cffd7144864b0e4eec369bfde80068f9095dc63b37058bec48
+          current="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" \
+            --query 'properties.template.containers[0].image' --output tsv)"
+          if [ "$current" = "$quickstart" ]; then image="$helloworld"; else image="$quickstart"; fi
+          echo "Running $current, deploying $image"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+      - id: subject
+        uses: ./actions/deploy-container-app
+        with:
+          resource-group: ${{ vars.AZURE_SANDBOX_RESOURCE_GROUP }}
+          container-app: ${{ vars.AZURE_SANDBOX_CONTAINER_APP }}
+          image: ${{ steps.pick.outputs.image }}
+          health-check-path: /
+
+      - name: Assert outputs
+        shell: bash
+        env:
+          RESULT: ${{ steps.subject.outputs.result }}
+          REVISION: ${{ steps.subject.outputs.revision }}
+          PREVIOUS: ${{ steps.subject.outputs.previous-revision }}
+          URL: ${{ steps.subject.outputs.url }}
+        run: |
+          fail=0
+          if [ "$RESULT" != deployed ]; then
+            echo "::error::result: expected 'deployed', got '$RESULT'."
+            fail=1
+          fi
+          if [ -z "$REVISION" ] || [ -z "$PREVIOUS" ] || [ "$REVISION" = "$PREVIOUS" ]; then
+            echo "::error::Expected a new revision different from the previous one, got revision '$REVISION', previous-revision '$PREVIOUS'."
+            fail=1
+          fi
+          case "$URL" in
+            https://*) ;;
+            *) echo "::error::url: expected https://<fqdn>, got '$URL'."; fail=1 ;;
+          esac
+          exit "$fail"

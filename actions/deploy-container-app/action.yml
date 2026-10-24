@@ -1,0 +1,67 @@
+name: deploy-container-app
+description: >-
+  Updates an Azure Container App to an image, waits for the new revision to be healthy, and
+  optionally checks a health endpoint over HTTPS. Run azure/login first.
+author: JosephSearle
+
+inputs:
+  resource-group:
+    description: Resource group of the Container App.
+    required: true
+  container-app:
+    description: Name of the Container App.
+    required: true
+  image:
+    description: >-
+      Full image reference to deploy. Pin it by digest, e.g. "myacr.azurecr.io/app@sha256:…", so
+      the revision runs exactly the image that was built. A tag-only reference gets a warning.
+    required: true
+  container-name:
+    description: >-
+      Container in the app to update. Empty updates the app's only container, and fails when the
+      app has more than one.
+    required: false
+    default: ""
+  health-check-path:
+    description: >-
+      Path starting with "/", e.g. "/healthz". When set, GET https://<fqdn><path> must return 2xx
+      before the action passes, which needs external ingress. Empty skips the check.
+    required: false
+    default: ""
+  wait-timeout-seconds:
+    description: How long to wait for the new revision to be provisioned and healthy.
+    required: false
+    default: "600"
+
+outputs:
+  revision:
+    description: Name of the revision now running the image. Empty if the update didn't happen.
+    value: ${{ steps.deploy.outputs.revision }}
+  previous-revision:
+    description: >-
+      Latest ready revision before the update, for rolling back. Empty for an app with no ready
+      revision, or if the app couldn't be read.
+    value: ${{ steps.deploy.outputs.previous-revision }}
+  url:
+    description: The app's URL, "https://<fqdn>". Empty when the app has no ingress.
+    value: ${{ steps.deploy.outputs.url }}
+  result:
+    description: >-
+      "deployed", "unhealthy" (the revision failed, timed out or failed the health check),
+      "invalid-input" (bad inputs, or inputs that don't match the app) or "error" (az not logged in,
+      the app couldn't be read, or the update was rejected). Always set.
+    value: ${{ steps.deploy.outputs.result }}
+
+runs:
+  using: composite
+  steps:
+    - id: deploy
+      shell: bash
+      env:
+        RESOURCE_GROUP: ${{ inputs.resource-group }}
+        CONTAINER_APP: ${{ inputs.container-app }}
+        IMAGE: ${{ inputs.image }}
+        CONTAINER_NAME: ${{ inputs.container-name }}
+        HEALTH_CHECK_PATH: ${{ inputs.health-check-path }}
+        WAIT_TIMEOUT_SECONDS: ${{ inputs.wait-timeout-seconds }}
+      run: '"$GITHUB_ACTION_PATH/scripts/deploy.sh"'

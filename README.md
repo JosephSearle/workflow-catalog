@@ -90,6 +90,7 @@ Copy a ready-made caller from [examples/callers/](examples/callers/). For ref ch
 
 | Action | Purpose |
 | --- | --- |
+| [deploy-container-app](actions/deploy-container-app/) | Updates an Azure Container App to an image (ideally by digest), waits for the new revision to be provisioned and healthy, and optionally GETs a health path. On failure, it prints the revision's error and system logs. Outputs `previous-revision` for rollback. Run `azure/login` first. [Azure setup](docs/azure-container-apps.md). Tested on `ubuntu-latest`. |
 | [lint-shell](actions/lint-shell/) | Runs shellcheck on `*.sh`, `*.bash` and shebang-detected scripts in a directory, honouring `.shellcheckrc`. shellcheck is a pinned release binary checked against a sha256 hash. `fail-on-findings: "false"` reports findings as a warning without failing. Tested on Linux x64 and arm64. |
 | [scan-secrets](actions/scan-secrets/) | Secret scanning with gitleaks over the full Git history (needs `fetch-depth: 0`), honouring `.gitleaks.toml` and `.gitleaksignore`. gitleaks is a pinned release binary checked against a sha256 hash. `fail-on-findings: "false"` reports secrets as a warning without failing. Tested on Linux x64 and arm64. |
 | [setup-node-deps](actions/setup-node-deps/) | Sets up pnpm or npm and Node (detected the same way as node-ci) with dependency caching, then does a frozen install where the lockfile is. Use it for Node jobs that node-ci doesn't cover, such as deploys. Tested on `ubuntu-latest`. |
