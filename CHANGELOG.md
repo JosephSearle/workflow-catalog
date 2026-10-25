@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.3.0](https://github.com/JosephSearle/workflow-catalog/compare/v1.2.0...v1.3.0) (2026-10-25)
+
+
+### Added
+
+* **azure-container-app-deploy:** add azure-container-app-deploy workflow ([#22](https://github.com/JosephSearle/workflow-catalog/issues/22)) ([34c8d1c](https://github.com/JosephSearle/workflow-catalog/commit/34c8d1cff14e70c1223feb2aeaf0a03156ecb080))
+* **deploy-container-app:** add deploy-container-app action ([#20](https://github.com/JosephSearle/workflow-catalog/issues/20)) ([7d335fa](https://github.com/JosephSearle/workflow-catalog/commit/7d335fa2695efeeef27afb09bf008e062825dc6d))
+* **release-please:** add release-please workflow ([#25](https://github.com/JosephSearle/workflow-catalog/issues/25)) ([9733982](https://github.com/JosephSearle/workflow-catalog/commit/973398211026a3373dd5b009eb5796c366ffeff8))
+
 ## [1.2.0](https://github.com/JosephSearle/workflow-catalog/compare/v1.1.0...v1.2.0) (2026-10-24)
 
 
