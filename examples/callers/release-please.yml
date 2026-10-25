@@ -1,0 +1,42 @@
+# Copy to .github/workflows/ in a consumer repo.
+# Replace <sha> # vX.Y.Z with a release's full commit SHA and tag. Dependabot keeps it current.
+#
+# Keeps one release PR open on main, and tags a release when it merges.
+# One-time setup (GitHub App, repo variable and secret, config and manifest):
+# docs/release-please.md in the catalog.
+#
+# To deploy on release, add a job with `needs: release-please` gated on
+# `needs.release-please.outputs.release-created == 'true'`. See
+# azure-container-app-deploy.yml in this folder.
+name: release-please
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+# One run at a time, queued: two runs racing could both edit the release PR.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    uses: JosephSearle/workflow-catalog/.github/workflows/release-please.yml@<sha> # vX.Y.Z
+    # Only reads the config. Writes use the app token.
+    permissions:
+      contents: read
+    with:
+      app-client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+      # Defaults shown:
+      # config-file: release-please-config.json
+      # manifest-file: .release-please-manifest.json
+      # target-branch: ""      # the repo's default branch
+      # move-major-tag: false  # true: also move a plain vN tag, for repos others pin by major
+      # dry-run: false         # true: check config only, no app needed
+      # runs-on: ubuntu-latest
+      # timeout-minutes: 10
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}

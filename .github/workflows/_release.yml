@@ -1,9 +1,6 @@
 # Internal. Opens/updates the release PR, tags releases, moves the floating major tag.
-#
-# Requires a GitHub App installed on this repo with contents:write and pull-requests:write:
-#   vars.RELEASE_APP_CLIENT_ID     App client ID
-#   secrets.RELEASE_APP_PRIVATE_KEY App private key
-# A GITHUB_TOKEN-created PR does not trigger `_ci`, so the release PR could never pass its required checks.
+# Runs the public release-please.yml from this commit, so every push to main
+# exercises its live path. App setup: docs/release-please.md.
 name: _release
 
 on:
@@ -19,63 +16,14 @@ concurrency:
 
 jobs:
   release-please:
-    name: Release Please
-    # Skipped until the release app is configured. See docs/versioning.md.
+    name: Release
+    # Skipped until the release app is configured. See docs/release-please.md.
     if: vars.RELEASE_APP_CLIENT_ID != ''
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions: {}
-    outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
-      major: ${{ steps.release.outputs.major }}
-      sha: ${{ steps.release.outputs.sha }}
-    steps:
-      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        id: app-token
-        with:
-          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          permission-contents: write
-          permission-pull-requests: write
-          permission-issues: write
-
-      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
-        id: release
-        with:
-          token: ${{ steps.app-token.outputs.token }}
-          config-file: release-please-config.json
-          manifest-file: .release-please-manifest.json
-
-  move-major-tag:
-    name: Move floating major tag
-    needs: release-please
-    # No v0: before 1.0.0, breaking changes ship as minor releases.
-    if: needs.release-please.outputs.release_created == 'true' && needs.release-please.outputs.major != '0'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions: {}
-    steps:
-      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        id: app-token
-        with:
-          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          permission-contents: write
-
-      - name: Point v<major> at the release commit
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          MAJOR_TAG: v${{ needs.release-please.outputs.major }}
-          SHA: ${{ needs.release-please.outputs.sha }}
-        run: |
-          # Singular `ref` matches exactly; plural `refs` would match v0 against v0.1.0.
-          if err=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$MAJOR_TAG" --silent 2>&1); then
-            gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$MAJOR_TAG" -f sha="$SHA" -F force=true --silent
-          elif [[ "$err" == *"HTTP 404"* ]]; then
-            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$MAJOR_TAG" -f sha="$SHA" --silent
-          else
-            echo "::error::Couldn't check whether $MAJOR_TAG exists: $err"
-            exit 1
-          fi
-          echo "Moved $MAJOR_TAG to $SHA"
+    uses: ./.github/workflows/release-please.yml
+    permissions:
+      contents: read
+    with:
+      app-client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+      move-major-tag: true
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}

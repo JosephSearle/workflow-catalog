@@ -42,6 +42,7 @@ jobs:
       wf-python-ci: ${{ steps.filter.outputs.wf-python-ci }}
       wf-shell-lint: ${{ steps.filter.outputs.wf-shell-lint }}
       wf-azure-container-app-deploy: ${{ steps.filter.outputs.wf-azure-container-app-deploy }}
+      wf-release-please: ${{ steps.filter.outputs.wf-release-please }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -115,6 +116,13 @@ jobs:
               - '.github/workflows/_test-wf-azure-container-app-deploy.yml'
               - 'tests/fixtures/azure-container-app-deploy/**'
               - 'tests/fixtures/azure-container-app-deploy-failing/**'
+            # _release.yml calls release-please.yml, so a change to it is retested too.
+            wf-release-please:
+              - '.github/workflows/release-please.yml'
+              - '.github/workflows/_release.yml'
+              - '.github/workflows/_test-wf-release-please.yml'
+              - 'tests/fixtures/release-please/**'
+              - 'tests/fixtures/release-please-failing/**'
 
   lint:
     name: Lint
@@ -340,6 +348,47 @@ jobs:
             exit 1
           fi
 
+  test-wf-release-please:
+    name: Test workflow release-please
+    needs: changes
+    if: needs.changes.outputs.wf-release-please == 'true'
+    uses: ./.github/workflows/_test-wf-release-please.yml
+    permissions:
+      contents: read
+
+  # Failure path: a dry run against a config with no packages.
+  # Expected to fail, so it stays out of `ci-ok.needs` and the assert job
+  # below checks its result instead. Skipped on push to main, where the PR
+  # already ran it.
+  test-wf-release-please-failing:
+    name: Test workflow release-please (failing fixture, expected to fail)
+    needs: changes
+    if: github.event_name != 'push' && needs.changes.outputs.wf-release-please == 'true'
+    uses: ./.github/workflows/release-please.yml
+    permissions:
+      contents: read
+    with:
+      config-file: tests/fixtures/release-please-failing/release-please-config.json
+      manifest-file: tests/fixtures/release-please-failing/.release-please-manifest.json
+      dry-run: true
+
+  test-wf-release-please-failing-assert:
+    name: Assert release-please fails on failing fixture
+    needs: [changes, test-wf-release-please-failing]
+    if: ${{ !cancelled() && github.event_name != 'push' && needs.changes.outputs.wf-release-please == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check result
+        env:
+          RESULT: ${{ needs.test-wf-release-please-failing.result }}
+        run: |
+          if [ "$RESULT" != failure ]; then
+            echo "::error::Expected release-please to fail on tests/fixtures/release-please-failing, got '$RESULT'."
+            exit 1
+          fi
+
   ci-ok:
     name: ci-ok
     if: always()
@@ -358,6 +407,8 @@ jobs:
       - test-wf-shell-lint
       - test-wf-azure-container-app-deploy
       - test-wf-azure-container-app-deploy-failing-assert
+      - test-wf-release-please
+      - test-wf-release-please-failing-assert
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}

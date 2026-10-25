@@ -28,7 +28,4 @@
 
 release-please has to create its PR with an app token. PRs created with `GITHUB_TOKEN` don't trigger workflows, so `ci-ok` would never run on them.
 
-1. Create a GitHub App owned by your account. Repository permissions: Contents read/write, Pull requests read/write, Issues read/write. No webhook.
-2. Install it on `workflow-catalog` only.
-3. Add repository variable `RELEASE_APP_CLIENT_ID` and secret `RELEASE_APP_PRIVATE_KEY`.
-4. Add the app as a bypass actor on the tag ruleset (see [security.md](security.md)).
+Follow [release-please.md](release-please.md) to create the app, install it on `workflow-catalog`, and add the `RELEASE_APP_CLIENT_ID` variable and `RELEASE_APP_PRIVATE_KEY` secret. Then add the app as a bypass actor on the tag ruleset (see [security.md](security.md)).

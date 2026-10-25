@@ -2,7 +2,7 @@
 # Replace <sha> # vX.Y.Z with a release's full commit SHA and tag. Dependabot keeps it current.
 #
 # Deploys when a release-please release PR merges. The deploy job runs in the
-# same workflow, gated on release-please's release_created output. A separate
+# same workflow, gated on release-please's release-created output. A separate
 # workflow listening for `release` or tag events wouldn't fire for releases
 # made with GITHUB_TOKEN, and its tag ref would fail a main-only environment
 # branch policy.
@@ -20,23 +20,19 @@ on:
 permissions: {}
 
 jobs:
+  # Release app setup: docs/release-please.md in the catalog.
   release-please:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+    uses: JosephSearle/workflow-catalog/.github/workflows/release-please.yml@<sha> # vX.Y.Z
     permissions:
-      contents: write
-      issues: write
-      pull-requests: write
-    outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
-    steps:
-      - id: release
-        uses: googleapis/release-please-action@<sha> # vX.Y.Z
+      contents: read
+    with:
+      app-client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
 
   azure-container-app-deploy:
     needs: release-please
-    if: needs.release-please.outputs.release_created == 'true'
+    if: needs.release-please.outputs.release-created == 'true'
     # One deploy per environment at a time. Queue rather than cancel, so a
     # half-finished deploy is never interrupted.
     concurrency:
@@ -51,7 +47,7 @@ jobs:
       registry: myacr.azurecr.io
       resource-group: rg-my-app
       container-app: ca-my-app
-      image-tags: ${{ needs.release-please.outputs.tag_name }}
+      image-tags: ${{ needs.release-please.outputs.tag-name }}
       # Defaults shown:
       # image-name: ""            # repo name, lowercased
       # working-directory: .

@@ -115,11 +115,11 @@ gh variable set AZURE_SANDBOX_REGISTRY --repo "$REPO" --body "$ACR.azurecr.io"
 
 ## 5. Deploy on release
 
-The [caller example](../examples/callers/azure-container-app-deploy.yml) runs the deploy as a job in the repo's release-please workflow, gated on `release_created`, and passes `tag_name` as `image-tags`. It runs on the `main` push that merges the release PR, so it matches the federated credential and the `main`-only branch policy.
+The [caller example](../examples/callers/azure-container-app-deploy.yml) runs the deploy as a job in the repo's release-please workflow, gated on `release-created`, and passes `tag-name` as `image-tags`. It runs on the `main` push that merges the release PR, so it matches the federated credential and the `main`-only branch policy.
 
 Don't use a separate workflow triggered by `release` or tag events. Releases created with `GITHUB_TOKEN` don't trigger workflows, and a tag ref fails the branch policy.
 
-In a monorepo using release-please's manifest mode, gate each app's deploy job on its own path's output, e.g. `needs.release-please.outputs['apps/api--release_created']`, and pass `apps/api--tag_name`.
+In a monorepo, gate each app's deploy job on its own path in the `releases` output, e.g. `if: fromJSON(needs.release-please.outputs.releases)['apps/api'] != null`, and pass `fromJSON(needs.release-please.outputs.releases)['apps/api'].tag-name` as `image-tags`.
 
 ## 6. Cost
 
