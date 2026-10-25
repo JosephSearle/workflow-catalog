@@ -1,0 +1,53 @@
+# Internal. Tests .github/workflows/release-please.yml against fixtures.
+# Dry runs only: a live run would open a release PR on this repo. The live
+# path runs from _release.yml on every push to main.
+name: _test-wf-release-please
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  run:
+    name: Run release-please
+    # Local ref: tests the version in this commit/PR.
+    uses: ./.github/workflows/release-please.yml
+    permissions:
+      contents: read
+    with:
+      config-file: tests/fixtures/release-please/release-please-config.json
+      manifest-file: tests/fixtures/release-please/.release-please-manifest.json
+      move-major-tag: true
+      dry-run: true
+
+  assert:
+    name: Assert release-please outputs
+    needs: run
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check outputs
+        env:
+          RELEASE_CREATED: ${{ needs.run.outputs.release-created }}
+          RELEASES_CREATED: ${{ needs.run.outputs.releases-created }}
+          PRS_CREATED: ${{ needs.run.outputs.prs-created }}
+          PATHS_RELEASED: ${{ needs.run.outputs.paths-released }}
+          TAG_NAME: ${{ needs.run.outputs.tag-name }}
+          RELEASES: ${{ needs.run.outputs.releases }}
+        run: |
+          fail=0
+          check() {
+            if [ "$2" != "$3" ]; then
+              echo "::error::Expected $1 '$3' on a dry run, got '$2'."
+              fail=1
+            fi
+          }
+          check release-created "$RELEASE_CREATED" false
+          check releases-created "$RELEASES_CREATED" false
+          check prs-created "$PRS_CREATED" false
+          check paths-released "$PATHS_RELEASED" "[]"
+          check tag-name "$TAG_NAME" ""
+          check releases "$RELEASES" "{}"
+          exit "$fail"

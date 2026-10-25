@@ -1,0 +1,261 @@
+# Public. Called by consumer repos. The file name is public API: renaming it is a breaking change.
+# Docs: README.md#workflows   Example caller: examples/callers/release-please.yml
+#
+# Every write uses a GitHub App token, not GITHUB_TOKEN: a PR created with
+# GITHUB_TOKEN doesn't trigger workflows, so the release PR's required checks
+# would never run. Setup: docs/release-please.md.
+name: release-please
+
+on:
+  workflow_call:
+    inputs:
+      app-client-id:
+        description: >-
+          Client ID of the GitHub App that opens the release PR and creates releases, e.g.
+          vars.RELEASE_APP_CLIENT_ID. Not a secret. Required unless dry-run.
+        type: string
+        required: false
+        default: ""
+      config-file:
+        description: Path to the release-please config, relative to the repo root.
+        type: string
+        required: false
+        default: release-please-config.json
+      manifest-file:
+        description: Path to the release-please manifest, relative to the repo root.
+        type: string
+        required: false
+        default: .release-please-manifest.json
+      target-branch:
+        description: Branch to open the release PR against. Empty uses the repo's default branch.
+        type: string
+        required: false
+        default: ""
+      move-major-tag:
+        description: >-
+          After a root-package release from 1.0.0 on, create or move a plain vN tag to the release
+          commit, for repos that others pin by major version. Needs include-v-in-tag in the config.
+        type: boolean
+        required: false
+        default: false
+      dry-run:
+        description: >-
+          Only check the inputs, config and manifest. Skips release-please and the tag move, and
+          needs no app credentials.
+        type: boolean
+        required: false
+        default: false
+      runs-on:
+        description: Runner label for the jobs.
+        type: string
+        required: false
+        default: ubuntu-latest
+      timeout-minutes:
+        description: Timeout in minutes for each job.
+        type: number
+        required: false
+        default: 10
+    secrets:
+      APP_PRIVATE_KEY:
+        description: Private key of the GitHub App in app-client-id. Required unless dry-run.
+        required: false
+    outputs:
+      release-created:
+        description: '"true" if the root package (path ".") was released, otherwise "false".'
+        value: ${{ jobs.release-please.outputs.release-created }}
+      releases-created:
+        description: '"true" if any package was released, otherwise "false".'
+        value: ${{ jobs.release-please.outputs.releases-created }}
+      paths-released:
+        description: JSON array of the package paths released, e.g. '["."]'. "[]" when nothing was.
+        value: ${{ jobs.release-please.outputs.paths-released }}
+      releases:
+        description: >-
+          JSON object of each released package path to its "tag-name", "version", "sha" and
+          "html-url", e.g. '{"apps/api": {"tag-name": "api-v1.4.0", ...}}'. "{}" when nothing was
+          released. Use it to gate per-package jobs in a monorepo.
+        value: ${{ jobs.release-please.outputs.releases }}
+      prs-created:
+        description: '"true" if a release PR was created or updated, otherwise "false".'
+        value: ${{ jobs.release-please.outputs.prs-created }}
+      tag-name:
+        description: Root package release tag, e.g. "v1.4.0". Empty unless release-created.
+        value: ${{ jobs.release-please.outputs.tag-name }}
+      version:
+        description: Root package release version, e.g. "1.4.0". Empty unless release-created.
+        value: ${{ jobs.release-please.outputs.version }}
+      major:
+        description: Major part of version. Empty unless release-created.
+        value: ${{ jobs.release-please.outputs.major }}
+      minor:
+        description: Minor part of version. Empty unless release-created.
+        value: ${{ jobs.release-please.outputs.minor }}
+      patch:
+        description: Patch part of version. Empty unless release-created.
+        value: ${{ jobs.release-please.outputs.patch }}
+      sha:
+        description: Commit the root package release was tagged at. Empty unless release-created.
+        value: ${{ jobs.release-please.outputs.sha }}
+      html-url:
+        description: URL of the root package's GitHub release. Empty unless release-created.
+        value: ${{ jobs.release-please.outputs.html-url }}
+
+permissions: {}
+
+jobs:
+  release-please:
+    name: Release Please
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    # Only for reading the config. Writes use the app token.
+    permissions:
+      contents: read
+    outputs:
+      release-created: ${{ steps.release.outputs.release_created == 'true' }}
+      releases-created: ${{ steps.release.outputs.releases_created == 'true' }}
+      paths-released: ${{ steps.release.outputs.paths_released || '[]' }}
+      releases: ${{ steps.collect.outputs.releases || '{}' }}
+      prs-created: ${{ steps.release.outputs.prs_created == 'true' }}
+      tag-name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+      major: ${{ steps.release.outputs.major }}
+      minor: ${{ steps.release.outputs.minor }}
+      patch: ${{ steps.release.outputs.patch }}
+      sha: ${{ steps.release.outputs.sha }}
+      html-url: ${{ steps.release.outputs.html_url }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check inputs
+        env:
+          DRY_RUN: ${{ inputs.dry-run }}
+          APP_CLIENT_ID: ${{ inputs.app-client-id }}
+          HAS_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY != '' }}
+          CONFIG_FILE: ${{ inputs.config-file }}
+          MANIFEST_FILE: ${{ inputs.manifest-file }}
+        run: |
+          fail=0
+          error() { echo "::error::$1"; fail=1; }
+
+          if [ "$DRY_RUN" != true ]; then
+            [ -n "$APP_CLIENT_ID" ] || error "app-client-id is required unless dry-run is true."
+            [ "$HAS_PRIVATE_KEY" = true ] || error "Secret APP_PRIVATE_KEY is required unless dry-run is true. Pass it in secrets:."
+          fi
+          # The paths feed a sparse checkout, so keep them plain and inside the repo.
+          for pair in "config-file:$CONFIG_FILE" "manifest-file:$MANIFEST_FILE"; do
+            path="${pair#*:}"
+            if ! [[ "$path" =~ ^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$ ]] || [[ "/$path/" == */../* ]]; then
+              error "${pair%%:*} must be a relative path inside the repo, got '$path'."
+            fi
+          done
+          [ "$fail" = 0 ] || exit 1
+
+      # Same branch release-please reads them from. Empty is the triggering
+      # ref, which is the default branch for the usual push-to-main caller.
+      - name: Check out config and manifest
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.target-branch }}
+          sparse-checkout: |
+            /${{ inputs.config-file }}
+            /${{ inputs.manifest-file }}
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Check config and manifest
+        env:
+          CONFIG_FILE: ${{ inputs.config-file }}
+          MANIFEST_FILE: ${{ inputs.manifest-file }}
+        run: |
+          fail=0
+          error() { echo "::error::$1"; fail=1; }
+
+          if [ ! -f "$CONFIG_FILE" ]; then
+            error "Config $CONFIG_FILE not found. See docs/release-please.md in the catalog for a starter."
+          elif ! jq -e '.packages | type == "object" and length > 0' "$CONFIG_FILE" > /dev/null 2>&1; then
+            error "Config $CONFIG_FILE must be valid JSON with a non-empty \"packages\" object."
+          fi
+          if [ ! -f "$MANIFEST_FILE" ]; then
+            error "Manifest $MANIFEST_FILE not found. Create it with each package's current version, e.g. {\".\": \"0.0.0\"}."
+          elif ! jq -e 'type == "object"' "$MANIFEST_FILE" > /dev/null 2>&1; then
+            error "Manifest $MANIFEST_FILE must be a JSON object of package path to version."
+          fi
+          [ "$fail" = 0 ] || exit 1
+
+          # Not fatal: release-please treats a missing package as unreleased.
+          jq -r --slurpfile m "$MANIFEST_FILE" '.packages | keys[] | . as $k | select($m[0] | has($k) | not)' "$CONFIG_FILE" |
+            while IFS= read -r pkg; do
+              echo "::warning::Package '$pkg' is in $CONFIG_FILE but not in $MANIFEST_FILE, so release-please treats it as never released."
+            done
+
+      # Scoped to the caller's repo (the default), so the token can't reach
+      # other repos the app is installed on.
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        if: ${{ !inputs.dry-run }}
+        id: app-token
+        with:
+          client-id: ${{ inputs.app-client-id }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        if: ${{ !inputs.dry-run }}
+        id: release
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          config-file: ${{ inputs.config-file }}
+          manifest-file: ${{ inputs.manifest-file }}
+          target-branch: ${{ inputs.target-branch }}
+
+      # release-please names non-root outputs "<path>--<name>", which a
+      # reusable workflow can't pass through, so collect them into one object.
+      - id: collect
+        name: Collect released packages
+        if: ${{ !inputs.dry-run }}
+        env:
+          OUTPUTS: ${{ toJSON(steps.release.outputs) }}
+        run: |
+          releases=$(jq -c '. as $o
+            | (($o.paths_released // "[]") | fromjson)
+            | map(. as $p | (if $p == "." then "" else "\($p)--" end) as $k
+                | {key: $p, value: {
+                    "tag-name": $o["\($k)tag_name"], version: $o["\($k)version"],
+                    sha: $o["\($k)sha"], "html-url": $o["\($k)html_url"]}})
+            | from_entries' <<< "$OUTPUTS")
+          echo "releases=$releases" >> "$GITHUB_OUTPUT"
+
+  move-major-tag:
+    name: Move floating major tag
+    needs: release-please
+    # No v0: before 1.0.0, breaking changes ship as minor releases.
+    if: inputs.move-major-tag && needs.release-please.outputs.release-created == 'true' && needs.release-please.outputs.major != '0'
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    permissions: {}
+    steps:
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app-token
+        with:
+          client-id: ${{ inputs.app-client-id }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      - name: Point v<major> at the release commit
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          MAJOR_TAG: v${{ needs.release-please.outputs.major }}
+          SHA: ${{ needs.release-please.outputs.sha }}
+        run: |
+          # Singular `ref` matches exactly; plural `refs` would match v0 against v0.1.0.
+          if err=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$MAJOR_TAG" --silent 2>&1); then
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$MAJOR_TAG" -f sha="$SHA" -F force=true --silent
+          elif [[ "$err" == *"HTTP 404"* ]]; then
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$MAJOR_TAG" -f sha="$SHA" --silent
+          else
+            echo "::error::Couldn't check whether $MAJOR_TAG exists: $err"
+            exit 1
+          fi
+          echo "Moved $MAJOR_TAG to $SHA"
