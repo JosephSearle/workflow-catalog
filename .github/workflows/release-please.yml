@@ -184,7 +184,7 @@ jobs:
           [ "$fail" = 0 ] || exit 1
 
           # Not fatal: release-please treats a missing package as unreleased.
-          jq -r --slurpfile m "$MANIFEST_FILE" '.packages | keys[] | select(($m[0] | has(.)) | not)' "$CONFIG_FILE" |
+          jq -r --slurpfile m "$MANIFEST_FILE" '.packages | keys[] | . as $k | select($m[0] | has($k) | not)' "$CONFIG_FILE" |
             while IFS= read -r pkg; do
               echo "::warning::Package '$pkg' is in $CONFIG_FILE but not in $MANIFEST_FILE, so release-please treats it as never released."
             done
